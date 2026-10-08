@@ -536,6 +536,18 @@ a:focus-visible,
   align-items: flex-start;
   gap: 8px;
 }
+.card-top .provider-logo {
+  width: 28px;
+  height: 28px;
+}
+.provider-logo {
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+}
+.mono-tile .provider-logo {
+  width: 44px;
+  height: 44px;
+}
 .card-top b {
   font-size: 19px;
   letter-spacing: -0.02em;

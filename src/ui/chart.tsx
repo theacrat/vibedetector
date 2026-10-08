@@ -26,10 +26,12 @@ function Chart({
       </div>
       <ChartStats model={model} />
       <p className="chart-note">
-        {"Times shown in UTC. "}
-        {baseline === null
-          ? "Not enough history for a normal baseline."
-          : "Dashed line shows the historical baseline."}
+        {"Times shown in your local timezone. "}
+        {baseline === null ? (
+          <a href="/methodology">How much data is enough?</a>
+        ) : (
+          "Dashed line shows the historical baseline."
+        )}
       </p>
     </section>
   );

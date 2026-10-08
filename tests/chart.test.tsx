@@ -41,11 +41,13 @@ describe("community reports chart", () => {
       <Chart dashboard={empty} onRange={recordRange} pending={false} />,
     );
     expect(html).toContain("No community reports yet");
-    expect(html).toContain("Not enough history for a normal baseline.");
+    expect(html).toContain("How much data is enough?");
+    expect(html).toContain('href="/methodology"');
+    expect(html).not.toContain("bucket (partial)");
     expect(html).toContain("Most reported</span><b>—</b>");
     expect(html).not.toContain('class="baseline"');
     expect(html).not.toContain("NaN");
-    expect(html).toContain("in current 30 min bucket (partial)");
+    expect(html).toContain("since 00:30");
     expect(html.indexOf(">6h</button>")).toBeLessThan(html.indexOf(">24h</button>"));
     expect(html.indexOf(">24h</button>")).toBeLessThan(html.indexOf(">7d</button>"));
   });

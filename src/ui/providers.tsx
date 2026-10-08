@@ -3,6 +3,8 @@ import { useMemo } from "react";
 
 import type { Overview } from "@/domain";
 
+import { ProviderLogo } from "./provider-logo";
+
 const defaultSearch = { range: "24h" as const };
 
 function sparkLine(buckets: Overview["buckets"]) {
@@ -41,6 +43,7 @@ export function ProviderGrid({ overview }: { overview: Overview[] }) {
               aria-label={`View ${provider.name} reports`}
             >
               <div className="card-top">
+                <ProviderLogo provider={provider} />
                 <b>{provider.name}</b>
               </div>
               <svg viewBox="0 0 200 44" preserveAspectRatio="none" aria-hidden="true">
