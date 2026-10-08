@@ -129,7 +129,8 @@ function ProviderHero({ dashboard }: { dashboard: Dashboard }) {
           {dashboard.verdict}
         </p>
         <p className="sub">
-          <b>{dashboard.hourly.toLocaleString("en-GB")}</b>issue reports this hour.
+          <b>{dashboard.hourly.toLocaleString("en-GB")}</b>
+          {" issue reports this hour."}
         </p>
         <a className="status-link" href={provider.status} target="_blank" rel="noopener noreferrer">
           {provider.maker}
