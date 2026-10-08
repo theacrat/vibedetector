@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 
 function subscribe() {
   return () => {
-    /* Device timezone is read on hydration; there is no subscription to release. */
+    // Intl exposes no timezone-change event; hydration reads the device snapshot once.
   };
 }
 function deviceTimeZone() {
