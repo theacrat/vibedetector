@@ -1,0 +1,44 @@
+{
+  "name": "vibedetector",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "check": "bun run build && bun run format:check && bun run lint && bun run typecheck && bun run test && bun run test:e2e",
+    "deploy": "bun scripts/deploy-preflight.ts && bun run build && wrangler deploy",
+    "deploy:check": "wrangler deploy --dry-run",
+    "dev": "vite --host 127.0.0.1 --port 41873",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "lint": "oxlint --max-warnings=0",
+    "preview": "vite preview --host 127.0.0.1 --port 41873",
+    "test": "vitest run && bun test tests/backend.test.ts",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "typegen": "wrangler types src/generated/worker.d.ts"
+  },
+  "dependencies": {
+    "@tanstack/react-router": "1.170.41",
+    "@tanstack/react-start": "1.168.60",
+    "lucide-react": "1.53.0",
+    "react": "19.3.0",
+    "react-aria-components": "1.22.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.63.1",
+    "@playwright/test": "1.64.0",
+    "@types/bun": "1.4.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "miniflare": "5.20261006.1-alpha",
+    "oxfmt": "0.72.0",
+    "oxlint": "1.87.0",
+    "oxlint-tsgolint": "7.0.2003",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.3",
+    "wrangler": "4.149.0"
+  }
+}

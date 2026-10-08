@@ -1,0 +1,24 @@
+telemetry = false
+
+[run]
+bun = false
+
+[install]
+minimumReleaseAge = 259200
+minimumReleaseAgeExcludes = [
+  "@cloudflare/vite-plugin",
+  "@playwright/test",
+  "vite",
+  "wrangler",
+  "workerd",
+  "@cloudflare/workerd-linux-64",
+  "@cloudflare/workerd-darwin-64",
+  "@cloudflare/workerd-windows-64",
+  "@cloudflare/workerd-linux-arm64",
+  "@cloudflare/workerd-darwin-arm64",
+  "miniflare",
+  "react-aria",
+  "react-stately",
+  "@react-types/shared",
+  "@internationalized/number",
+]

@@ -1,0 +1,24 @@
+name: Quality gates
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - run: bun run typegen
+      - run: bunx playwright install --with-deps chromium
+      - run: bunx wrangler d1 migrations apply DB --local
+      - run: bun run check
+      - run: bun run deploy:check
