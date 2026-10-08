@@ -21,6 +21,12 @@ export default defineConfig({
   },
   overrides: [
     {
+      files: ["scripts/*.ts"],
+      rules: {
+        "node/no-top-level-await": "off",
+      },
+    },
+    {
       files: ["src/**/*"],
       rules: {
         "import/no-default-export": "error",

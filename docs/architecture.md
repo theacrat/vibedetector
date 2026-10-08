@@ -20,6 +20,10 @@ Alternative per-provider Durable Objects serialise counters but require custom h
 
 Require server-verified Turnstile on every report mutation. Check Siteverify success, expected hostname and action. Test keys work only on localhost. Fail closed on missing production configuration or verification errors. Cloudflare rate-limit binding throttles writes by IP before verification. D1 uniqueness prevents concurrent duplicate reports. No client-only security checks. No production bypass. Rate limiting and Turnstile mitigate abuse but cannot guarantee unique humans.
 
+The IP limit is a coarse defence and may affect shared networks. Cloudflare rate-limit counters are approximate and local to each edge location, not a global quota. D1's constraint, not the edge counter, owns report deduplication. Keep the rate-limit namespace unique within the account.
+
+Source contracts were checked against Cloudflare's [Siteverify documentation](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/) and [rate-limit binding documentation](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
+
 ## Privacy and operations
 
 Delete reports after eight days via an hourly scheduled handler. Do not log cookies, tokens or IP addresses. Publish privacy and methodology pages. Enable Worker logs and traces. Wrangler targets vibedetector.net. D1 provisioning, Turnstile setup, secrets and migrations precede deployment. Deployment remains a separate approval boundary.

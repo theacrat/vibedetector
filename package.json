@@ -5,7 +5,7 @@
   "scripts": {
     "build": "vite build",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run test && bun run build && bun run test:e2e",
-    "deploy": "bun run build && wrangler deploy",
+    "deploy": "bun scripts/deploy-preflight.ts && bun run build && wrangler deploy",
     "deploy:check": "wrangler deploy --dry-run",
     "dev": "vite --host 127.0.0.1 --port 41873",
     "format": "oxfmt",

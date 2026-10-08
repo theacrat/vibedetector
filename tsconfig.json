@@ -40,5 +40,5 @@
 
     "types": ["vite/client", "./src/generated/worker.d.ts", "bun"]
   },
-  "include": ["src", "tests", "*.ts"]
+  "include": ["src", "tests", "scripts", "*.ts"]
 }
