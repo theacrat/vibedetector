@@ -15,6 +15,8 @@ bun run dev
 
 Open http://127.0.0.1:41873. Localhost uses Cloudflare's Turnstile test keys. These keys are never accepted on the production hostname. Local data stays in `.wrangler/`.
 
+Reports contribute once per AI per fixed UTC hour. Category changes and undo apply to the active hour only. Earlier reports remain in historical charts until retention removes them.
+
 ## Gates
 
 ```sh

@@ -12,6 +12,8 @@ Community reports of AI quality, latency and availability, not official outage d
 
 Include the partial boundary buckets needed to cover the full selected duration. Label the newest bucket as a partial UTC interval, not a rolling count. The hero separately counts the actual trailing hour. Session responses identify their fixed reporting window; mutations reject stale windows so an hour rollover cannot falsely undo an earlier contribution.
 
+The wire field `window` is an integer UTC hour index, not a timestamp. Its next boundary in milliseconds is `(window + 1) * 3_600_000`. A report from an earlier window remains historical data; undo applies only to the active window.
+
 ## Architecture
 
 TanStack Start and React on Cloudflare Workers with the Cloudflare Vite plugin. D1 owns reports, atomic deduplication constraints and historical queries. Parameterised SQL only. Shared typed registry and pure aggregation functions. One server module owns storage; same-origin JSON APIs validate input at boundaries. Bounded bodies, matching Origin and HttpOnly cookies protect writes.
