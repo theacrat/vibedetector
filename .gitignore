@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars*
+.env*
+test-results/
+playwright-report/
+src/generated/routeTree.gen.ts
+src/generated/worker.d.ts
