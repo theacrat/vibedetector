@@ -6,8 +6,16 @@
   "compatibility_flags": ["nodejs_compat"],
   "routes": [{ "pattern": "vibedetector.net", "custom_domain": true }],
   "observability": { "enabled": true, "traces": { "enabled": true } },
-  "d1_databases": [{ "binding": "DB", "database_name": "vibedetector", "migrations_dir": "migrations" }],
-  "ratelimits": [{ "name": "REPORT_RATE_LIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "vibedetector", "migrations_dir": "migrations" },
+  ],
+  "ratelimits": [
+    {
+      "name": "REPORT_RATE_LIMIT",
+      "namespace_id": "1001",
+      "simple": { "limit": 10, "period": 60 },
+    },
+  ],
   "vars": { "TURNSTILE_SITE_KEY": "", "TURNSTILE_HOSTNAME": "vibedetector.net" },
-  "triggers": { "crons": ["17 * * * *"] }
+  "triggers": { "crons": ["17 * * * *"] },
 }
