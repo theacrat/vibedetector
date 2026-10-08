@@ -5,5 +5,6 @@ dist/
 .env*
 test-results/
 playwright-report/
+.openchamber/
 src/generated/routeTree.gen.ts
 src/generated/worker.d.ts
