@@ -10,6 +10,8 @@ Community reports of AI quality, latency and availability, not official outage d
 
 `Dashboard` contains UTC-aligned buckets, hourly count, baseline and verdict. Ranges are 6h (15-minute buckets), 24h (30-minute buckets) and 7d (3-hour buckets). Insufficient history or volume means insufficient data, never good vibes.
 
+Include the partial boundary buckets needed to cover the full selected duration. Label the newest bucket as a partial UTC interval, not a rolling count. The hero separately counts the actual trailing hour. Session responses identify their fixed reporting window; mutations reject stale windows so an hour rollover cannot falsely undo an earlier contribution.
+
 ## Architecture
 
 TanStack Start and React on Cloudflare Workers with the Cloudflare Vite plugin. D1 owns reports, atomic deduplication constraints and historical queries. Parameterised SQL only. Shared typed registry and pure aggregation functions. One server module owns storage; same-origin JSON APIs validate input at boundaries. Bounded bodies, matching Origin and HttpOnly cookies protect writes.
