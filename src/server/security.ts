@@ -1,7 +1,8 @@
-export class ApiError extends Error {
-  readonly status: number;
-  constructor(status: number, message: string) {
+class ApiError extends Error {
+  public readonly status: number;
+  public constructor(status: number, message: string) {
     super(message);
+    this.name = "ApiError";
     this.status = status;
   }
 }
@@ -10,52 +11,52 @@ const COOKIE = "vd_identity";
 const TEST_SITE_KEY = "1x00000000000000000000AA";
 const TEST_SECRET = "1x0000000000000000000000000000000AA";
 
-export function challengeConfig(
+function challengeConfig(
   bindings: Cloudflare.Env,
   hostname: string,
 ): { siteKey: string; secret: string; hostname: string; local: boolean } {
   const local = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
   const siteKey = bindings.TURNSTILE_SITE_KEY || (local ? TEST_SITE_KEY : "");
-  const secret = bindings.TURNSTILE_SECRET_KEY || (local ? TEST_SECRET : "");
+  const configuredSecret = bindings.TURNSTILE_SECRET_KEY ?? "";
+  const secret = configuredSecret === "" && local ? TEST_SECRET : configuredSecret;
   if (
     !siteKey ||
     !secret ||
     (!local &&
-      (!bindings.TURNSTILE_HOSTNAME || /^[123]x0+/.test(siteKey) || /^[123]x0+/.test(secret)))
+      (!bindings.TURNSTILE_HOSTNAME || /^[123]x0+/u.test(siteKey) || /^[123]x0+/u.test(secret)))
   ) {
     throw new ApiError(503, "Reporting is not configured");
   }
   return { hostname: local ? hostname : bindings.TURNSTILE_HOSTNAME, local, secret, siteKey };
 }
 
-export async function browserIdentity(
-  request: Request,
-): Promise<{ hash: string; cookie: string | null }> {
+async function browserIdentity(request: Request): Promise<{ hash: string; cookie: string | null }> {
   const raw = request.headers
     .get("Cookie")
     ?.split(";")
     .map((part) => part.trim())
     .find((part) => part.startsWith(`${COOKIE}=`))
     ?.slice(COOKIE.length + 1);
-  const valid = raw !== undefined && /^[a-f0-9]{64}$/.test(raw);
+  const valid = raw !== undefined && /^[a-f0-9]{64}$/u.test(raw);
   const identity = valid
     ? raw
     : Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) =>
         byte.toString(16).padStart(2, "0"),
       ).join("");
-  const hash = Array.from(
-    new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(identity))),
-    (byte) => byte.toString(16).padStart(2, "0"),
+  const encoded = new TextEncoder().encode(identity);
+  const digest = await crypto.subtle.digest("SHA-256", encoded);
+  const hash = Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
   ).join("");
-  return {
-    cookie: valid
-      ? null
-      : `${COOKIE}=${identity}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000${new URL(request.url).protocol === "https:" ? "; Secure" : ""}`,
-    hash,
-  };
+  // No Set-Cookie is needed for an existing identity.
+  const cookie = valid
+    ? // oxlint-disable-next-line unicorn/no-null
+      null
+    : `${COOKIE}=${identity}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000${new URL(request.url).protocol === "https:" ? "; Secure" : ""}`;
+  return { cookie, hash };
 }
 
-export async function readJson(request: Request): Promise<unknown> {
+async function readJson(request: Request): Promise<unknown> {
   if (request.headers.get("Origin") !== new URL(request.url).origin) {
     throw new ApiError(403, "Origin rejected");
   }
@@ -67,7 +68,7 @@ export async function readJson(request: Request): Promise<unknown> {
   if (Number(request.headers.get("Content-Length")) > 4096) {
     throw new ApiError(413, "Body too large");
   }
-  const reader = request.body?.getReader();
+  const reader: ReadableStreamDefaultReader<Uint8Array> | undefined = request.body?.getReader();
   if (!reader) {
     throw new ApiError(400, "Missing body");
   }
@@ -75,12 +76,16 @@ export async function readJson(request: Request): Promise<unknown> {
   let size = 0;
   try {
     while (true) {
+      // Stream reads are sequential to enforce the bound without buffering ahead.
+      // oxlint-disable-next-line eslint/no-await-in-loop
       const chunk = await reader.read();
       if (chunk.done) {
         break;
       }
       size += chunk.value.byteLength;
       if (size > 4096) {
+        // Cancellation must finish before releasing the stream lock.
+        // oxlint-disable-next-line eslint/no-await-in-loop
         await reader.cancel();
         throw new ApiError(413, "Body too large");
       }
@@ -102,9 +107,27 @@ export async function readJson(request: Request): Promise<unknown> {
   }
 }
 
-export type VerifyFetch = (input: string, init: RequestInit) => Promise<Response>;
+type VerifyFetch = (input: string, init: RequestInit) => Promise<Response>;
 
-export async function verifyChallenge(
+function validChallengeResult(result: object, hostname: string, dummy: boolean): boolean {
+  if (dummy) {
+    return (
+      "metadata" in result &&
+      typeof result.metadata === "object" &&
+      result.metadata !== null &&
+      "result_with_testing_key" in result.metadata &&
+      result.metadata.result_with_testing_key === true
+    );
+  }
+  return (
+    "hostname" in result &&
+    result.hostname === hostname &&
+    "action" in result &&
+    result.action === "report"
+  );
+}
+
+async function verifyChallenge(
   config: ReturnType<typeof challengeConfig>,
   token: string,
   verifyFetch: VerifyFetch = fetch,
@@ -113,7 +136,7 @@ export async function verifyChallenge(
     const response = await verifyFetch(
       "https://challenges.cloudflare.com/turnstile/v0/siteverify",
       {
-        body: new URLSearchParams({ secret: config.secret, response: token }),
+        body: new URLSearchParams({ response: token, secret: config.secret }),
         method: "POST",
         signal: AbortSignal.timeout(5000),
       },
@@ -128,10 +151,7 @@ export async function verifyChallenge(
       typeof result !== "object" ||
       !("success" in result) ||
       result.success !== true ||
-      !("hostname" in result) ||
-      result.hostname !== (dummy ? "localhost" : config.hostname) ||
-      !("action" in result) ||
-      result.action !== (dummy ? "test" : "report")
+      !validChallengeResult(result, config.hostname, dummy)
     ) {
       throw new ApiError(403, "Challenge rejected");
     }
@@ -142,3 +162,5 @@ export async function verifyChallenge(
     throw new ApiError(503, "Challenge verification unavailable");
   }
 }
+export { ApiError, browserIdentity, challengeConfig, readJson, verifyChallenge };
+export type { VerifyFetch };

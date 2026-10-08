@@ -1,33 +1,15 @@
 import { env } from "cloudflare:workers";
 
-import { findProvider, isRange, providers } from "../domain";
-import type { Dashboard, Overview, Range } from "../domain";
-import { aggregate } from "./aggregation";
-import { loadReports } from "./storage";
+import type { Dashboard, Overview, Range } from "@/domain";
 
-export async function readDashboard(id: string, range: Range): Promise<Dashboard> {
-  if (!isRange(range)) {
-    throw new Error("Invalid range");
-  }
-  const provider = findProvider(id);
-  if (!provider) {
-    throw new Error("Unknown provider");
-  }
-  const now = Date.now();
-  return aggregate(provider, range, await loadReports(env.DB, provider.id, now), now);
+import { dashboardFromDatabase, overviewFromDatabase } from "./queries";
+
+async function readDashboard(id: string, range: Range): Promise<Dashboard> {
+  return dashboardFromDatabase(env.DB, id, range, Date.now());
 }
 
-export async function readOverview(): Promise<Overview[]> {
-  const now = Date.now();
-  return Promise.all(
-    providers.map(async (provider) => {
-      const dashboard = aggregate(
-        provider,
-        "24h",
-        await loadReports(env.DB, provider.id, now),
-        now,
-      );
-      return { buckets: dashboard.buckets, hourly: dashboard.hourly, provider };
-    }),
-  );
+async function readOverview(): Promise<Overview[]> {
+  return overviewFromDatabase(env.DB, Date.now());
 }
+
+export { readDashboard, readOverview };

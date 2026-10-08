@@ -1,5 +1,3 @@
-export {};
-
 declare global {
   namespace Cloudflare {
     interface Env {
@@ -7,3 +5,6 @@ declare global {
     }
   }
 }
+// The global augmentation must be a module even though it exports no values.
+// oxlint-disable-next-line unicorn/require-module-specifiers
+export {};
