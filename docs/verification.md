@@ -23,6 +23,8 @@ Review `git diff main...HEAD` against `CODING_STANDARDS.md` and `docs/architectu
 
 The running app showed all eight provider links and direct paths with SSR content. Desktop and mobile browser checks confirmed reloads and no horizontal overflow. A live localhost submission revealed that Cloudflare's test Siteverify result has hostname `example.com`, testing-key metadata and no action. The local test branch must validate that documented test response shape; production must continue to enforce the configured hostname and `report` action.
 
+Follow-up reviewers independently found an hour-index versus millisecond mismatch in the UI rollover timer. Test the next-boundary conversion explicitly and assert that idle controls do not issue repeated session requests. Route generation must run before type-aware lint on a fresh checkout, not depend on leftovers from local development.
+
 ## Production boundary
 
 Dry-run packaging cannot verify a remote D1 database, Turnstile widget, DNS, or cron execution. The deployment checklist in `README.md` owns these checks after explicit approval. Never describe local gates as production verification.
