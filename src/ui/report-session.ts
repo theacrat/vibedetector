@@ -87,7 +87,7 @@ function useReportVerification(id: ProviderId, state: ReportState) {
       }
       widget.current = undefined;
     };
-    // Retrying recreates the widget even though the provider has not changed.
+    // A retry intentionally recreates the challenge without changing the provider.
     // oxlint-disable-next-line react/exhaustive-effect-dependencies
   }, [id, attempt, container, widget, setSession, setReportError, setToken]);
 }
