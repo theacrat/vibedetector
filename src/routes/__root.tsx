@@ -46,6 +46,38 @@ const Route = createRootRoute({
   ),
 });
 
+function LogoMark() {
+  return (
+    <svg className="logo-mark" viewBox="0 0 40 40" aria-hidden="true">
+      <defs>
+        <linearGradient id="logo-gradient" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#ababab" />
+          <stop offset=".5" stopColor="#f0f0ed" />
+          <stop offset="1" stopColor="#ababab" />
+        </linearGradient>
+      </defs>
+      <rect
+        x="2"
+        y="2"
+        width="36"
+        height="36"
+        rx="11"
+        fill="#202020"
+        stroke="url(#logo-gradient)"
+        strokeWidth="2.5"
+      />
+      <path
+        d="M7 24 L13 24 L16 14 L20 30 L24 10 L27 24 L33 24"
+        fill="none"
+        stroke="url(#logo-gradient)"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function Root() {
   return (
     <html lang="en">
@@ -59,33 +91,7 @@ function Root() {
         </a>
         <header className="top">
           <Link className="logo" to="/" aria-label="vibedetector home">
-            <svg className="logo-mark" viewBox="0 0 40 40" aria-hidden="true">
-              <defs>
-                <linearGradient id="logo-gradient" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" stopColor="#ababab" />
-                  <stop offset=".5" stopColor="#f0f0ed" />
-                  <stop offset="1" stopColor="#ababab" />
-                </linearGradient>
-              </defs>
-              <rect
-                x="2"
-                y="2"
-                width="36"
-                height="36"
-                rx="11"
-                fill="#202020"
-                stroke="url(#logo-gradient)"
-                strokeWidth="2.5"
-              />
-              <path
-                d="M7 24 L13 24 L16 14 L20 30 L24 10 L27 24 L33 24"
-                fill="none"
-                stroke="url(#logo-gradient)"
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <LogoMark />
             <span>
               vibe<b>detector</b>
             </span>

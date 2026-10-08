@@ -5,6 +5,18 @@ import type { Overview } from "@/domain";
 
 const defaultSearch = { range: "24h" as const };
 
+function sparkLine(buckets: Overview["buckets"]) {
+  const totals = buckets.map((bucket) => bucket.nerfed + bucket.slow + bucket.broken);
+  const max = Math.max(1, ...totals) * 1.1;
+  const line = totals
+    .map(
+      (total, index) =>
+        `${index === 0 ? "M" : "L"}${(index / Math.max(1, totals.length - 1)) * 200},${44 - (total / max) * 44}`,
+    )
+    .join(" ");
+  return line;
+}
+
 export function ProviderGrid({ overview }: { overview: Overview[] }) {
   const paramsById = useMemo(
     () => new Map(overview.map(({ provider }) => [provider.id, { provider: provider.id }])),
@@ -13,14 +25,7 @@ export function ProviderGrid({ overview }: { overview: Overview[] }) {
   return (
     <div className="grid">
       {overview.map(({ provider, hourly, buckets }) => {
-        const totals = buckets.map((bucket) => bucket.nerfed + bucket.slow + bucket.broken);
-        const max = Math.max(1, ...totals) * 1.1;
-        const line = totals
-          .map(
-            (total, index) =>
-              `${index === 0 ? "M" : "L"}${(index / Math.max(1, totals.length - 1)) * 200},${44 - (total / max) * 44}`,
-          )
-          .join(" ");
+        const line = sparkLine(buckets);
         const params = paramsById.get(provider.id);
         if (!params) {
           return;

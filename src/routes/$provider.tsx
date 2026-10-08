@@ -48,7 +48,7 @@ const Route = createFileRoute("/$provider")({
   }),
 });
 
-function ProviderPage() {
+function useProviderData() {
   const loaded = Route.useLoaderData();
   const [refreshed, setRefreshed] = useState({ data: loaded, source: loaded });
   const latest = useRef(loaded);
@@ -56,9 +56,6 @@ function ProviderPage() {
     latest.current = loaded;
   }, [loaded]);
   const { dashboard, overview } = refreshed.source === loaded ? refreshed.data : loaded;
-  const navigate = Route.useNavigate();
-  const [changing, setChanging] = useState(false);
-  const [rangeError, setRangeError] = useState("");
   const refreshError = usePublicRefresh(async () => {
     const snapshot = latest.current;
     const [nextDashboard, nextOverview] = await Promise.all([
@@ -74,13 +71,13 @@ function ProviderPage() {
       });
     }
   });
-  const { provider } = dashboard;
-  const verdictColor = {
-    "insufficient community data": "var(--muted)",
-    "killed the vibe": "var(--broken)",
-    "no report spike": "var(--ok)",
-    "vibes are off": "var(--slow)",
-  }[dashboard.verdict];
+  return { dashboard, overview, refreshError };
+}
+
+function useProviderRange() {
+  const navigate = Route.useNavigate();
+  const [changing, setChanging] = useState(false);
+  const [rangeError, setRangeError] = useState("");
   const changeRange = useCallback(
     async (range: Range) => {
       setChanging(true);
@@ -94,52 +91,67 @@ function ProviderPage() {
     },
     [navigate],
   );
-  const verdictStyle = useMemo(
-    () => ({ borderColor: verdictColor, color: verdictColor }),
-    [verdictColor],
-  );
-  const otherProviders = useMemo(
-    () => overview.filter((entry) => entry.provider.id !== provider.id),
-    [overview, provider.id],
-  );
   const selectRange = useCallback(
     (range: Range) => {
       void changeRange(range);
     },
     [changeRange],
   );
+  return { changing, rangeError, selectRange };
+}
+
+function ProviderHero({ dashboard }: { dashboard: Dashboard }) {
+  const { provider } = dashboard;
+  const verdictColor = {
+    "insufficient community data": "var(--muted)",
+    "killed the vibe": "var(--broken)",
+    "no report spike": "var(--ok)",
+    "vibes are off": "var(--slow)",
+  }[dashboard.verdict];
+  const verdictStyle = useMemo(
+    () => ({ borderColor: verdictColor, color: verdictColor }),
+    [verdictColor],
+  );
+  return (
+    <div className="who">
+      <div className="mono-tile" aria-hidden="true">
+        {provider.name[0]}
+      </div>
+      <div>
+        <p className="maker">{provider.maker}</p>
+        <h1>
+          {"How's "}
+          {provider.name}
+          {" feeling?"}
+        </h1>
+        <p className="verdict" style={verdictStyle}>
+          <span className="dot" aria-hidden="true" />
+          {dashboard.verdict}
+        </p>
+        <p className="sub">
+          <b>{dashboard.hourly.toLocaleString("en-GB")}</b>issue reports this hour.
+        </p>
+        <a className="status-link" href={provider.status} target="_blank" rel="noopener noreferrer">
+          {provider.maker}
+          {" official status"}
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function ProviderPage() {
+  const { dashboard, overview, refreshError } = useProviderData();
+  const { changing, rangeError, selectRange } = useProviderRange();
+  const { provider } = dashboard;
+  const otherProviders = useMemo(
+    () => overview.filter((entry) => entry.provider.id !== provider.id),
+    [overview, provider.id],
+  );
   return (
     <main className="wrap" id="main">
       <section className="hero">
-        <div className="who">
-          <div className="mono-tile" aria-hidden="true">
-            {provider.name[0]}
-          </div>
-          <div>
-            <p className="maker">{provider.maker}</p>
-            <h1>
-              {"How's "}
-              {provider.name}
-              {" feeling?"}
-            </h1>
-            <p className="verdict" style={verdictStyle}>
-              <span className="dot" aria-hidden="true" />
-              {dashboard.verdict}
-            </p>
-            <p className="sub">
-              <b>{dashboard.hourly.toLocaleString("en-GB")}</b>issue reports this hour.
-            </p>
-            <a
-              className="status-link"
-              href={provider.status}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {provider.maker}
-              {" official status"}
-            </a>
-          </div>
-        </div>
+        <ProviderHero dashboard={dashboard} />
         <Report id={provider.id} key={provider.id} />
       </section>
       {(rangeError || refreshError) && (
