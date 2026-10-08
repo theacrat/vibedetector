@@ -1,6 +1,7 @@
 import { defineConfig } from "oxlint";
 
 export default defineConfig({
+  ignorePatterns: ["src/generated/**", "dist/**", ".wrangler/**"],
   categories: {
     correctness: "error",
     pedantic: "error",

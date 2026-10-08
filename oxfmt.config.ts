@@ -1,7 +1,7 @@
 import { defineConfig } from "oxfmt";
 
 export default defineConfig({
-  ignorePatterns: [],
+  ignorePatterns: ["src/generated/**", "dist/**", ".wrangler/**", "bun.lock"],
   sortImports: true,
   sortPackageJson: {
     sortScripts: true,
