@@ -1,4 +1,5 @@
 #!/bin/sh
 set -eu
+test -f src/generated/routeTree.gen.ts || bun run build
 bun run format:check
 bun run lint
