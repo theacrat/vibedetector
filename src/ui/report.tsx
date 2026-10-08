@@ -1,17 +1,14 @@
 import { Funnel, Hourglass, Zap } from "lucide-react";
 import { useCallback } from "react";
-import { Button } from "react-aria-components";
+import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
 
 import { categories } from "@/domain";
 import type { Category, ProviderId } from "@/domain";
 
-import {
-  useReportState,
-  useReportWindow,
-  useReportVerification,
-  useReportMutation,
-} from "./report-session";
+import { useReportState, useReportWindow, useReportMutation } from "./report-session";
 import type { ReportState } from "./report-session";
+
+import "./report-dialog.css";
 
 const icons = { broken: Zap, nerfed: Funnel, slow: Hourglass };
 function ReportButtons({
@@ -21,7 +18,7 @@ function ReportButtons({
   state: ReportState;
   reportActions: (category: Category) => () => void;
 }) {
-  const { session, pending, token } = state;
+  const { session, pending } = state;
   return (
     <fieldset className={`btns${session?.category ? " done" : ""}`} aria-label="Report an issue">
       {categories.map((category) => {
@@ -31,7 +28,7 @@ function ReportButtons({
             key={category}
             className={`vibe-btn ${category}`}
             aria-pressed={session?.category === category}
-            isDisabled={pending || !session || !token}
+            isDisabled={pending || !session}
             onPress={reportActions(category)}
           >
             <Icon aria-hidden="true" />
@@ -43,22 +40,86 @@ function ReportButtons({
   );
 }
 
+// React Aria's modal elements need their own styling hooks, not wrapper divs.
+/* oxlint-disable react/forbid-component-props */
+// oxlint-disable-next-line eslint/max-lines-per-function
+function ReportDialog({
+  state,
+  retry,
+  cancel,
+}: {
+  state: ReportState;
+  retry: () => void;
+  cancel: () => void;
+}) {
+  const { pending, phase, intent, setContainer, reportError } = state;
+  const openChange = useCallback(
+    (open: boolean) => {
+      if (!open) {
+        cancel();
+      }
+    },
+    [cancel],
+  );
+  return (
+    <ModalOverlay
+      className="report-dialog-overlay"
+      isOpen={pending}
+      isKeyboardDismissDisabled={phase === "submitting"}
+      onOpenChange={openChange}
+    >
+      <Modal className="report-dialog-modal">
+        <Dialog className="report-dialog">
+          <Heading slot="title">Verifying your report</Heading>
+          <p>
+            {intent?.category === null
+              ? "Verifying before removing your report."
+              : "A quick check before recording your report."}
+          </p>
+          {phase !== "error" && (
+            <output className="report-dialog-status">
+              <span className="report-dialog-spinner" aria-hidden="true" />
+              {phase === "submitting"
+                ? "Saving your report..."
+                : "Verifying. Follow the check below if requested."}
+            </output>
+          )}
+          <div className="report-dialog-challenge" ref={setContainer} />
+          {phase === "error" && (
+            <p className="error" role="alert">
+              {reportError}
+            </p>
+          )}
+          <div className="report-dialog-actions">
+            {phase === "error" && (
+              <Button className="plain-button" onPress={retry}>
+                Retry verification
+              </Button>
+            )}
+            <Button className="plain-button" isDisabled={phase === "submitting"} onPress={cancel}>
+              Cancel
+            </Button>
+          </div>
+        </Dialog>
+      </Modal>
+    </ModalOverlay>
+  );
+}
+/* oxlint-enable react/forbid-component-props */
+
 function Report({ id }: { id: ProviderId }) {
   const state = useReportState();
   useReportWindow(id, state);
-  useReportVerification(id, state);
-  const report = useReportMutation(id, state);
-  const { session, pending, feedback, container, reportError, setToken, setAttempt } = state;
+  const { stage, retry, cancel } = useReportMutation(id, state);
+  const { session, pending, phase, feedback, reportError, intent } = state;
+  const pendingMessage =
+    phase === "submitting" ? "Saving your report..." : "Verifying your report...";
   const reportActions = useCallback(
     (category: Category) => () => {
-      void report(category);
+      stage(category);
     },
-    [report],
+    [stage],
   );
-  const retryVerification = useCallback(() => {
-    setToken("");
-    setAttempt((value) => value + 1);
-  }, [setToken, setAttempt]);
 
   return (
     <section className="report" aria-labelledby="feels">
@@ -66,21 +127,18 @@ function Report({ id }: { id: ProviderId }) {
       <ReportButtons state={state} reportActions={reportActions} />
       <output className="hint">
         {pending
-          ? "Saving your report..."
+          ? pendingMessage
           : feedback ||
             (session?.category
               ? "Your report is selected. Tap again to undo."
-              : "One report per AI per hour. Switch or undo anytime.")}
+              : "Choose how your AI feels.")}
       </output>
-      <div className="verification" ref={container} />
-      {reportError && (
+      {reportError && !intent && (
         <div className="error" role="alert">
           <p>{reportError}</p>
-          <Button className="plain-button" isDisabled={pending} onPress={retryVerification}>
-            Retry verification
-          </Button>
         </div>
       )}
+      <ReportDialog state={state} retry={retry} cancel={cancel} />
     </section>
   );
 }

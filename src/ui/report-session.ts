@@ -6,147 +6,109 @@ import type { Category, ProviderId } from "@/domain";
 import { requestJson, RequestError } from "./data";
 import { reportingWindowDelay } from "./report-window";
 import { loadTurnstile, mountWidget } from "./turnstile";
-import type { Turnstile } from "./turnstile";
 
 interface Session {
   category: Category | null;
   siteKey: string;
   window: number;
 }
-
+interface Intent {
+  category: Category | null;
+  session: Session;
+}
+type Phase = "verifying" | "submitting" | "error";
 type ReportState = ReturnType<typeof useReportState>;
-function useReportWindow(id: ProviderId, state: ReportState) {
-  const { session, pending, setSession, setReportError } = state;
-  const reloadSession = useEffectEvent(async () => {
-    const next = await requestJson<Session>(`/api/session/${id}`);
-    if (!Number.isFinite(next.window)) {
-      throw new TypeError("Could not load the reporting window. Please try again.");
-    }
-    setSession(next);
-  });
-  const refreshWindow = useEffectEvent(async () => {
-    try {
-      await reloadSession();
-    } catch (error) {
-      setReportError(
-        error instanceof Error ? error.message : "Could not refresh your reporting window.",
-      );
-    }
-  });
 
-  useEffect(() => {
-    if (!session || pending) {
-      return;
-    }
-    const delay = reportingWindowDelay(session.window, Date.now());
-    const timer = globalThis.setTimeout(() => {
-      void refreshWindow();
-    }, delay);
-    return () => {
-      globalThis.clearTimeout(timer);
-    };
-  }, [session, pending]);
+async function readSession(id: ProviderId, signal?: AbortSignal) {
+  const session = await requestJson<Session>(`/api/session/${id}`, signal ? { signal } : undefined);
+  if (!Number.isFinite(session.window)) {
+    throw new TypeError("Could not load the reporting window. Please try again.");
+  }
+  return session;
 }
 
-function useReportVerification(id: ProviderId, state: ReportState) {
-  const { container, widget, setSession, setReportError, setToken, attempt } = state;
+function useReportState() {
+  // DOM callback refs use null when the dialog unmounts.
+  // oxlint-disable-next-line unicorn/no-null
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const [session, setSession] = useState<Session>();
+  const [intent, setIntent] = useState<Intent>();
+  const [phase, setPhase] = useState<Phase>("verifying");
+  const [reportError, setReportError] = useState("");
+  const [feedback, setFeedback] = useState("");
+  return {
+    container,
+    feedback,
+    intent,
+    pending: intent !== undefined,
+    phase,
+    reportError,
+    session,
+    setContainer,
+    setFeedback,
+    setIntent,
+    setPhase,
+    setReportError,
+    setSession,
+  };
+}
+
+function useInitialSession(id: ProviderId, state: ReportState) {
+  const { setSession, setReportError } = state;
   useEffect(() => {
-    let active = true;
+    const controller = new AbortController();
     async function initialize() {
       try {
-        const next = await requestJson<Session>(`/api/session/${id}`);
-        if (!active) {
-          return;
+        const next = await readSession(id, controller.signal);
+        if (!controller.signal.aborted) {
+          setSession(next);
         }
-        if (!Number.isFinite(next.window)) {
-          setReportError("Could not load the reporting window. Please try again.");
-          return;
-        }
-        setReportError("");
-        setSession(next);
-        if (!next.siteKey) {
-          setReportError("Reporting is unavailable until verification is configured.");
-          return;
-        }
-        const api = await loadTurnstile();
-        if (!active || !container.current) {
-          return;
-        }
-        mountWidget(api, container.current, next.siteKey, widget, setToken, setReportError);
       } catch (error) {
-        if (active) {
+        if (!controller.signal.aborted) {
           setReportError(error instanceof Error ? error.message : "Could not load your report.");
         }
       }
     }
     void initialize();
     return () => {
-      active = false;
-      if (widget.current) {
-        widget.current.api.remove(widget.current.id);
-      }
-      widget.current = undefined;
+      controller.abort();
     };
-    // A retry intentionally recreates the challenge without changing the provider.
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies
-  }, [id, attempt, container, widget, setSession, setReportError, setToken]);
+  }, [id, setSession, setReportError]);
 }
 
-function useReportState() {
-  const container = useRef<HTMLDivElement>(null);
-  const widget = useRef<{ api: Turnstile; id: string } | undefined>(undefined);
-  const [session, setSession] = useState<Session>();
-  const [token, setToken] = useState("");
-  const [pending, setPending] = useState(false);
-  const [reportError, setReportError] = useState("");
-  const [feedback, setFeedback] = useState("");
-  const [attempt, setAttempt] = useState(0);
-
-  return {
-    attempt,
-    container,
-    feedback,
-    pending,
-    reportError,
-    session,
-    setAttempt,
-    setFeedback,
-    setPending,
-    setReportError,
-    setSession,
-    setToken,
-    token,
-    widget,
-  };
-}
-
-async function handleReportError(
-  error: unknown,
-  id: ProviderId,
-  setSession: ReportState["setSession"],
-  setReportError: ReportState["setReportError"],
-) {
-  if (error instanceof RequestError && error.status === 409) {
+function useReportWindow(id: ProviderId, state: ReportState) {
+  const { session, pending, setSession, setReportError } = state;
+  useInitialSession(id, state);
+  const refreshWindow = useEffectEvent(async (signal: AbortSignal) => {
     try {
-      const refreshedSession = await requestJson<Session>(`/api/session/${id}`);
-      if (Number.isFinite(refreshedSession.window)) {
-        setSession(refreshedSession);
-        setReportError(
-          "The reporting window changed. Your selection was refreshed. Please submit again.",
-        );
-      } else {
-        setReportError("Invalid reporting window. Please reload the page.");
+      const next = await readSession(id, signal);
+      if (!signal.aborted && !pending) {
+        setSession(next);
       }
-    } catch {
-      setReportError(
-        "The reporting window changed, but your selection could not refresh. Please reload the page.",
-      );
+    } catch (error) {
+      if (!signal.aborted && !pending) {
+        setReportError(
+          error instanceof Error ? error.message : "Could not refresh your reporting window.",
+        );
+      }
     }
-  } else {
-    setReportError(
-      error instanceof Error ? error.message : "Could not save your report. Please try again.",
+  });
+  useEffect(() => {
+    if (!session || pending) {
+      return;
+    }
+    const controller = new AbortController();
+    const timer = globalThis.setTimeout(
+      () => {
+        void refreshWindow(controller.signal);
+      },
+      reportingWindowDelay(session.window, Date.now()),
     );
-  }
+    return () => {
+      globalThis.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [session, pending]);
 }
 
 async function refreshCounts(
@@ -162,69 +124,168 @@ async function refreshCounts(
   }
 }
 
-function reportCategory(selected: Category | null, category: Category) {
-  // The reporting API requires JSON null to undo, not an omitted category.
-  // oxlint-disable-next-line unicorn/no-null
-  const next = selected === category ? null : category;
-  return next;
-}
-
-function resetVerification(widget: ReportState["widget"]) {
-  if (widget.current) {
-    widget.current.api.reset(widget.current.id);
-  }
-}
-
-function useReportMutation(id: ProviderId, state: ReportState) {
+// oxlint-disable-next-line eslint/max-lines-per-function
+function useVerification(
+  id: ProviderId,
+  state: ReportState,
+  setControl: (controller: AbortController) => void,
+) {
   const router = useRouter();
-  const saving = useRef(false);
-  const { token, session, setPending, setReportError, setFeedback, setSession, setToken, widget } =
-    state;
-  return useCallback(
-    async (category: Category) => {
-      if (!token || !session || saving.current) {
+  const { container, intent, setIntent, setPhase, setSession, setFeedback, setReportError } = state;
+  // oxlint-disable-next-line eslint/max-lines-per-function
+  useEffect(() => {
+    if (!intent || !container) {
+      return;
+    }
+    const controller = new AbortController();
+    setControl(controller);
+    const staged = intent;
+    const element = container;
+    let widget: ReturnType<typeof mountWidget> | undefined;
+    let submitted = false;
+    const fail = (message: string) => {
+      if (!controller.signal.aborted && !submitted) {
+        setReportError(message);
+        setPhase("error");
+        controller.abort();
+      }
+    };
+    // oxlint-disable-next-line eslint/max-lines-per-function
+    async function submit(token: string) {
+      if (controller.signal.aborted || submitted || !token) {
         return;
       }
-      saving.current = true;
-      const next = reportCategory(session.category, category);
-      setPending(true);
-      setReportError("");
-      setFeedback("");
+      submitted = true;
+      setPhase("submitting");
       try {
         const result = await requestJson<{ category: Category | null }>(`/api/reports/${id}`, {
-          body: JSON.stringify({ category: next, token, window: session.window }),
+          body: JSON.stringify({
+            category: staged.category,
+            token,
+            window: staged.session.window,
+          }),
           headers: { "Content-Type": "application/json" },
           method: "POST",
+          signal: controller.signal,
         });
-        setSession({ ...session, category: result.category });
+        if (controller.signal.aborted) {
+          return;
+        }
+        setSession({ ...staged.session, category: result.category });
         setFeedback(
           result.category === null
             ? "Report removed."
             : "Thanks. Your report was recorded. Tap again to undo.",
         );
+        setIntent(undefined);
         await refreshCounts(router, setReportError);
       } catch (error) {
-        await handleReportError(error, id, setSession, setReportError);
+        if (controller.signal.aborted) {
+          return;
+        }
+        let message =
+          error instanceof Error ? error.message : "Could not save your report. Please try again.";
+        if (error instanceof RequestError && error.status === 409) {
+          try {
+            const next = await readSession(id, controller.signal);
+            if (controller.signal.aborted) {
+              return;
+            }
+            setSession(next);
+            message =
+              "The reporting window changed. Your selection was refreshed. Please submit again.";
+          } catch {
+            message =
+              "The reporting window changed, but your selection could not refresh. Please reload the page.";
+          }
+        }
+        if (!controller.signal.aborted) {
+          setReportError(message);
+          setPhase("error");
+          controller.abort();
+        }
       }
-      setToken("");
-      resetVerification(widget);
-      setPending(false);
-      saving.current = false;
-    },
-    [
-      id,
-      token,
-      session,
-      router,
-      setPending,
-      setReportError,
-      setFeedback,
-      setSession,
-      setToken,
-      widget,
-    ],
-  );
+    }
+    async function verify() {
+      if (!staged.session.siteKey) {
+        fail("Reporting is unavailable until verification is configured.");
+        return;
+      }
+      try {
+        const api = await loadTurnstile();
+        if (!controller.signal.aborted) {
+          widget = mountWidget(
+            api,
+            element,
+            staged.session.siteKey,
+            (token) => {
+              void submit(token);
+            },
+            fail,
+          );
+        }
+      } catch (error) {
+        fail(error instanceof Error ? error.message : "Could not load verification.");
+      }
+    }
+    void verify();
+    return () => {
+      controller.abort();
+      if (widget) {
+        widget.api.remove(widget.id);
+      }
+    };
+  }, [
+    id,
+    container,
+    intent,
+    setControl,
+    router,
+    setIntent,
+    setPhase,
+    setSession,
+    setFeedback,
+    setReportError,
+  ]);
 }
 
-export { useReportState, useReportWindow, useReportVerification, useReportMutation };
+function useReportMutation(id: ProviderId, state: ReportState) {
+  const control = useRef<AbortController | undefined>(undefined);
+  const { intent, session, setIntent, setPhase, setFeedback, setReportError } = state;
+  const cancel = useCallback(() => {
+    control.current?.abort();
+    setIntent(undefined);
+    setReportError("");
+  }, [control, setIntent, setReportError]);
+  const stage = useCallback(
+    (category: Category) => {
+      if (!session || intent) {
+        return;
+      }
+      setReportError("");
+      setFeedback("");
+      setPhase("verifying");
+      // JSON null is the API's explicit retraction command.
+      // oxlint-disable-next-line unicorn/no-null
+      setIntent({ category: session.category === category ? null : category, session });
+    },
+    [session, intent, setReportError, setFeedback, setPhase, setIntent],
+  );
+  const retry = useCallback(() => {
+    control.current?.abort();
+    if (intent && session) {
+      setReportError("");
+      setPhase("verifying");
+      setIntent({ ...intent, session });
+    }
+  }, [control, intent, session, setReportError, setPhase, setIntent]);
+
+  const setControl = useCallback((controller: AbortController) => {
+    control.current = controller;
+  }, []);
+  useVerification(id, state, setControl);
+  return { cancel, retry, stage };
+}
+
+export { useReportState, useReportWindow, useReportMutation };
 export type { ReportState };

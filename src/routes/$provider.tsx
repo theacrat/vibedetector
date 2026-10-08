@@ -5,6 +5,7 @@ import { findProvider, isRange } from "@/domain";
 import type { Dashboard, Overview, Range } from "@/domain";
 import { Chart } from "@/ui/chart";
 import { loadDashboard, loadOverview, requestJson } from "@/ui/data";
+import { ProviderLogo } from "@/ui/provider-logo";
 import { ProviderGrid } from "@/ui/providers";
 import { usePublicRefresh } from "@/ui/refresh";
 import { Report } from "@/ui/report";
@@ -115,7 +116,7 @@ function ProviderHero({ dashboard }: { dashboard: Dashboard }) {
   return (
     <div className="who">
       <div className="mono-tile" aria-hidden="true">
-        {provider.name[0]}
+        <ProviderLogo provider={provider} />
       </div>
       <div>
         <p className="maker">{provider.maker}</p>
@@ -126,7 +127,11 @@ function ProviderHero({ dashboard }: { dashboard: Dashboard }) {
         </h1>
         <p className="verdict" style={verdictStyle}>
           <span className="dot" aria-hidden="true" />
-          {dashboard.verdict}
+          {dashboard.verdict === "insufficient community data" ? (
+            <a href="/methodology">{dashboard.verdict}</a>
+          ) : (
+            dashboard.verdict
+          )}
         </p>
         <p className="sub">
           <b>{dashboard.hourly.toLocaleString("en-GB")}</b>

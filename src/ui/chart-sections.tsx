@@ -1,10 +1,11 @@
 import { Button } from "react-aria-components";
 
-import { categories, ranges } from "@/domain";
+import { categories } from "@/domain";
 
 import { timeLabel } from "./chart-label";
 import { colors, categoryStyles } from "./chart-model";
 import type { ChartModel } from "./chart-model";
+import { useDeviceTimeZone } from "./device-time";
 
 function textAnchor(tick: number) {
   if (tick === 0) {
@@ -18,6 +19,8 @@ function textAnchor(tick: number) {
 
 function ChartHead({ model }: { model: ChartModel }) {
   const { last, range, handleRangeActions, pending } = model;
+  const timeZone = useDeviceTimeZone();
+  const since = model.buckets.at(-1)?.t ?? model.asOf;
   return (
     <div className="chart-head">
       <div>
@@ -25,9 +28,8 @@ function ChartHead({ model }: { model: ChartModel }) {
         <p className="now">
           <span className="live" aria-hidden="true" />
           <b>{last.toLocaleString("en-GB")}</b>
-          {" in current "}
-          {ranges[range].label}
-          {" bucket (partial)"}
+          {" since "}
+          {timeLabel(since, "24h", timeZone)}
         </p>
       </div>
       <fieldset className="ranges" aria-label="Time range">
@@ -61,6 +63,7 @@ function ChartDefinitions({ model }: { model: ChartModel }) {
 }
 
 function ChartAxes({ model }: { model: ChartModel }) {
+  const timeZone = useDeviceTimeZone();
   const { max, width, positionY, positionX, height, buckets, range } = model;
   return (
     <>
@@ -92,7 +95,7 @@ function ChartAxes({ model }: { model: ChartModel }) {
               y={height - 6}
               textAnchor={textAnchor(tick)}
             >
-              {tick === 4 ? "now" : timeLabel(point.t, range)}
+              {tick === 4 ? "now" : timeLabel(point.t, range, timeZone)}
             </text>
           )
         );
@@ -168,14 +171,15 @@ function ChartSvg({ model }: { model: ChartModel }) {
 }
 
 function ChartTip({ model }: { model: ChartModel }) {
+  const timeZone = useDeviceTimeZone();
   const { bucket, hovered, tipStyle, range } = model;
   return (
     bucket &&
     hovered !== undefined && (
       <div className="tip" style={tipStyle}>
         <div className="timestamp">
-          {timeLabel(bucket.t, range)}
-          {" UTC"}
+          {range === "7d" && `${timeLabel(bucket.t, "7d", timeZone)} `}
+          {timeLabel(bucket.t, "24h", timeZone)}
         </div>
         {categories.map((category) => (
           <div className="row" key={category}>

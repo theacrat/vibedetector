@@ -13,11 +13,26 @@ const Route = createFileRoute("/methodology")({
       </p>
       <h2>Counts and charts</h2>
       <p>
-        {
-          "One anonymous browser can hold one report per provider per fixed UTC hour. Switching\n category updates that report. Undo removes it. The hourly count covers the last hour. Charts\n use UTC-aligned buckets of 15 minutes for 6h, 30 minutes for 24h and 3 hours for 7d."
-        }
+        Switching category updates your current report. Tap the selected category to undo. The
+        hourly count covers the last hour. Chart intervals are 15 minutes for 6h, 30 minutes for 24h
+        and 3 hours for 7d. Times are displayed in your local timezone.
       </p>
       <h2>Baseline and verdict</h2>
+      <p>
+        Sufficient data means at least 100 non-retracted reports in the previous 48 complete hours,
+        plus an older report showing that reporting history spans at least 48 hours. The normal
+        baseline is the number of reports in that period divided by 48.
+      </p>
+      <p>
+        Vibes are off when the last hour has at least 10 reports and twice the normal hourly
+        average. Killed the vibe means at least 20 reports and five times that average. Otherwise we
+        show no report spike, not confirmed healthy service.
+      </p>
+      <p>
+        These thresholds are conservative product rules, not a statistical confidence test. Reports
+        may be unevenly distributed over those 48 hours, and a spike cannot tell us why a service
+        feels different.
+      </p>
       <p>
         {
           "Verdicts compare recent report activity with historical activity. When history or report\n volume is insufficient, we show “insufficient community data” rather than implying good\n service. An empty chart means no community reports in that range, not a healthy service\n guarantee."

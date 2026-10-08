@@ -161,7 +161,7 @@ function useChartModel(dashboard: Dashboard, onRange: (range: Range) => void) {
   const geometry = chartGeometry(dashboard, width);
   const { buckets, peak, top } = geometry;
   const interaction = useChartInteraction(onRange, width, buckets, hovered, setHovered, peak, top);
-  return { ...geometry, ...interaction, element, hovered, uid };
+  return { ...geometry, ...interaction, asOf: dashboard.asOf, element, hovered, uid };
 }
 
 type ChartModel = ReturnType<typeof useChartModel> & { pending: boolean };
