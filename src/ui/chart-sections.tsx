@@ -172,12 +172,15 @@ function ChartSvg({ model }: { model: ChartModel }) {
 
 function ChartTip({ model }: { model: ChartModel }) {
   const timeZone = useDeviceTimeZone();
-  const { bucket, hovered, tipStyle } = model;
+  const { bucket, hovered, tipStyle, range } = model;
   return (
     bucket &&
     hovered !== undefined && (
       <div className="tip" style={tipStyle}>
-        <div className="timestamp">{timeLabel(bucket.t, "24h", timeZone)}</div>
+        <div className="timestamp">
+          {range === "7d" && `${timeLabel(bucket.t, "7d", timeZone)} `}
+          {timeLabel(bucket.t, "24h", timeZone)}
+        </div>
         {categories.map((category) => (
           <div className="row" key={category}>
             <span>
