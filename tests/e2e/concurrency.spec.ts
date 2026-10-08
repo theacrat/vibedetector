@@ -46,4 +46,13 @@ test("concurrent verified requests retain one contribution in the local Worker",
     headers: { Origin: "http://127.0.0.1:41873" },
   });
   expect(undo.ok()).toBe(true);
+  const stale = await request.post("/api/reports/deepseek", {
+    data: {
+      category: "broken",
+      token: "XXXX.DUMMY.TOKEN.XXXX",
+      window: identity.window - 3_600_000,
+    },
+    headers: { Origin: "http://127.0.0.1:41873" },
+  });
+  expect(stale.status()).toBe(409);
 });
