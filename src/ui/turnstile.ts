@@ -4,12 +4,14 @@ interface Turnstile {
     options: {
       sitekey: string;
       action: string;
+      appearance: "interaction-only";
+      execution: "execute";
       callback: (token: string) => void;
       "expired-callback": () => void;
       "error-callback": () => void;
     },
   ) => string;
-  reset: (id: string) => void;
+  execute: (id: string) => void;
   remove: (id: string) => void;
 }
 function turnstileApi() {
@@ -34,6 +36,8 @@ async function loadTurnstile() {
       () => {
         const api = turnstileApi();
         if (!api) {
+          script.remove();
+          turnstileScript = undefined;
           reject(new Error("Verification did not load. Please try again."));
           return;
         }
@@ -66,25 +70,27 @@ function mountWidget(
   api: Turnstile,
   container: HTMLDivElement,
   siteKey: string,
-  widget: React.RefObject<Widget | undefined>,
-  setToken: React.Dispatch<React.SetStateAction<string>>,
-  setReportError: React.Dispatch<React.SetStateAction<string>>,
+  onToken: (token: string) => void,
+  onError: (message: string) => void,
 ) {
-  widget.current = {
+  const widget: Widget = {
     api,
     id: api.render(container, {
       action: "report",
-      callback: setToken,
+      appearance: "interaction-only",
+      callback: onToken,
       "error-callback": () => {
-        setToken("");
-        setReportError("Verification failed. Please retry verification.");
+        onError("Verification failed. Please retry verification.");
       },
+      execution: "execute",
       "expired-callback": () => {
-        setToken("");
+        onError("Verification expired. Please retry verification.");
       },
       sitekey: siteKey,
     }),
   };
+  api.execute(widget.id);
+  return widget;
 }
 
 export { loadTurnstile, mountWidget };
