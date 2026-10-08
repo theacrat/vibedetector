@@ -27,6 +27,21 @@ test("unknown providers return a not found page", async ({ page }) => {
   await expect(page.getByText(/not found/iu).first()).toBeVisible();
 });
 
+test("idle reporting controls do not continuously reload the session", async ({ page }) => {
+  let sessions = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/session/grok") {
+      sessions += 1;
+    }
+  });
+  await page.goto("/grok");
+  await expect(page.getByRole("button", { exact: true, name: "slow" })).toBeEnabled();
+  await expect.poll(() => sessions).toBe(1);
+  await page.getByRole("button", { exact: true, name: "7d" }).click();
+  await expect(page.getByRole("img", { name: /Reports over 7d/iu })).toBeVisible();
+  expect(sessions).toBe(1);
+});
+
 test("all provider paths return server-rendered content without JavaScript", async ({
   browser,
 }) => {
