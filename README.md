@@ -38,4 +38,6 @@ Deployment requires explicit approval. No deployment runs automatically from CI.
 
 The rate-limit binding is configured in Wrangler. Reporting fails closed when production bot protection is unconfigured. Keep separate databases and widgets for preview deployments.
 
+Reporting protection is layered, not a guarantee of unique people. The edge limit is approximate and local to each Cloudflare location. Cookie clearing, multiple devices and distributed brigading remain possible. Enable Cloudflare managed WAF/bot rules appropriate to the account before launch, monitor rejected submissions and database usage, and adjust coarse limits if shared networks are affected.
+
 Architecture and delivery decisions are in `docs/architecture.md`. Live rows expire after eight days. Cloudflare backups and security logs have separate retention policies. Community reports cannot prove service health or unique humans.
