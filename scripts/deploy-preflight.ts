@@ -1,5 +1,5 @@
 async function preflight() {
-  const config: unknown = await Bun.file("wrangler.jsonc").json();
+  const config: unknown = Bun.JSONC.parse(await Bun.file("wrangler.jsonc").text());
 
   if (
     typeof config !== "object" ||

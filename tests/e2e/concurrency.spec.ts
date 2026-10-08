@@ -54,7 +54,7 @@ test("concurrent verified requests retain one contribution in the local Worker",
     data: {
       category: "broken",
       token: "XXXX.DUMMY.TOKEN.XXXX",
-      window: identity.window - 3_600_000,
+      window: identity.window - 1,
     },
     headers,
   });
