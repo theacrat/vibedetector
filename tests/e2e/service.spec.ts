@@ -5,10 +5,10 @@ test("homepage links to every provider and provider pages survive reload", async
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await Promise.all(
     ["claude", "chatgpt", "gemini", "copilot", "grok", "mistral", "deepseek", "cursor"].map(
-      async (id) => expect(page.locator(`main a[href="/${id}"]`).first()).toBeVisible(),
+      async (id) => expect(page.locator(`main a[href^="/${id}?"]`).first()).toBeVisible(),
     ),
   );
-  await page.locator('main a[href="/claude"]').first().click();
+  await page.getByRole("link", { name: "View Claude reports" }).click();
   await expect(page.getByRole("heading", { name: "How's Claude feeling?" })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("heading", { name: "How's Claude feeling?" })).toBeVisible();

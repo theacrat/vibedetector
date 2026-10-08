@@ -5,6 +5,6 @@ export default defineConfig({
   test: {
     environment: "node",
     exclude: ["tests/backend.test.ts"],
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.{ts,tsx}"],
   },
 });

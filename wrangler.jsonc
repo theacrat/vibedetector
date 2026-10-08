@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "vibedetector",
   "main": "src/server.ts",
-  "compatibility_date": "2026-10-09",
+  "compatibility_date": "2026-10-08",
   "compatibility_flags": ["nodejs_compat"],
   "routes": [{ "pattern": "vibedetector.net", "custom_domain": true }],
   "observability": { "enabled": true, "traces": { "enabled": true } },

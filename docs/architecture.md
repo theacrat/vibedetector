@@ -26,6 +26,8 @@ Source contracts were checked against Cloudflare's [Siteverify documentation](ht
 
 ## Privacy and operations
 
+The session date is 9 October, but the local system and Miniflare run on 8 October UTC. Pin compatibility to 2026-10-08 so local and deployed runtime gates use the same supported date.
+
 Delete reports after eight days via an hourly scheduled handler. Do not log cookies, tokens or IP addresses. Publish privacy and methodology pages. Enable Worker logs and traces. Wrangler targets vibedetector.net. D1 provisioning, Turnstile setup, secrets and migrations precede deployment. Deployment remains a separate approval boundary.
 
 ## Delivery checkpoint
