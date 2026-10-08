@@ -35,6 +35,11 @@ test("chart times follow the device timezone without hydration errors", async ({
     await expect(page.locator(".chart-note")).toContainText("local timezone");
     expect(errors).toEqual([]);
     await expect(page.locator(".mono-tile img")).toHaveAttribute("src", "/logos/claude.svg");
+    await page.getByRole("button", { exact: true, name: "7d" }).click();
+    await page.locator(".chart").hover();
+    await expect(page.locator(".tip .timestamp")).toHaveText(
+      /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{2}:\d{2}$/u,
+    );
   } finally {
     await context.close();
   }
