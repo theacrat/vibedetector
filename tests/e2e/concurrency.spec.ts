@@ -2,7 +2,11 @@ import { expect, test } from "@playwright/test";
 
 test("concurrent verified requests retain one contribution in the local Worker", async ({
   request,
-}) => {
+}, testInfo) => {
+  const headers = {
+    Origin: "http://127.0.0.1:41873",
+    "cf-connecting-ip": testInfo.project.name === "desktop" ? "198.51.100.11" : "198.51.100.12",
+  };
   const session = await request.get("/api/session/deepseek");
   expect(session.ok()).toBe(true);
   const identity: unknown = await session.json();
@@ -28,7 +32,7 @@ test("concurrent verified requests retain one contribution in the local Worker",
     Array.from({ length: 4 }, async () =>
       request.post("/api/reports/deepseek", {
         data: { category: "slow", token: "XXXX.DUMMY.TOKEN.XXXX", window: identity.window },
-        headers: { Origin: "http://127.0.0.1:41873" },
+        headers,
       }),
     ),
   );
@@ -43,7 +47,7 @@ test("concurrent verified requests retain one contribution in the local Worker",
     // SQL/JSON use null to represent a retracted report.
     // eslint-disable-next-line unicorn/no-null
     data: { category: null, token: "XXXX.DUMMY.TOKEN.XXXX", window: identity.window },
-    headers: { Origin: "http://127.0.0.1:41873" },
+    headers,
   });
   expect(undo.ok()).toBe(true);
   const stale = await request.post("/api/reports/deepseek", {
@@ -52,7 +56,7 @@ test("concurrent verified requests retain one contribution in the local Worker",
       token: "XXXX.DUMMY.TOKEN.XXXX",
       window: identity.window - 3_600_000,
     },
-    headers: { Origin: "http://127.0.0.1:41873" },
+    headers,
   });
   expect(stale.status()).toBe(409);
 });

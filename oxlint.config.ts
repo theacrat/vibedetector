@@ -21,6 +21,18 @@ export default defineConfig({
   },
   overrides: [
     {
+      files: ["src/**/*.tsx"],
+      rules: {
+        "react/forbid-component-props": [
+          "error",
+          { forbid: [{ allowedFor: ["Button", "Link"], propName: "className" }, "style"] },
+        ],
+        "react/jsx-max-depth": ["error", { max: 8 }],
+        // Oxfmt canonicalises string expressions into JSX text in this English-only interface.
+        "react/jsx-no-literals": "off",
+      },
+    },
+    {
       files: ["scripts/*.ts"],
       rules: {
         "node/no-top-level-await": "off",
