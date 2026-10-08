@@ -29,6 +29,11 @@ const Route = createFileRoute("/methodology")({
         show no report spike, not confirmed healthy service.
       </p>
       <p>
+        These thresholds are conservative product rules, not a statistical confidence test. Reports
+        may be unevenly distributed over those 48 hours, and a spike cannot tell us why a service
+        feels different.
+      </p>
+      <p>
         {
           "Verdicts compare recent report activity with historical activity. When history or report\n volume is insufficient, we show “insufficient community data” rather than implying good\n service. An empty chart means no community reports in that range, not a healthy service\n guarantee."
         }
