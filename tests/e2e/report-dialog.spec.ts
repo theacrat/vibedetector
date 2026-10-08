@@ -1,7 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Page, Route, APIResponse } from "@playwright/test";
 
-// This fake implements only Turnstile's documented render/execute/remove surface.
 // Its dummy token still reaches the local Worker's real Siteverify test-key path.
 const challengeScript = `
 const widgets = new Map();

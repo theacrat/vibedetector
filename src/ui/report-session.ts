@@ -124,7 +124,6 @@ async function refreshCounts(
   }
 }
 
-// Keep challenge ownership, stale-callback guards and submission cleanup in one effect.
 // oxlint-disable-next-line eslint/max-lines-per-function
 function useVerification(
   id: ProviderId,
@@ -133,7 +132,6 @@ function useVerification(
 ) {
   const router = useRouter();
   const { container, intent, setIntent, setPhase, setSession, setFeedback, setReportError } = state;
-  // The challenge and request share one cancellation lifetime.
   // oxlint-disable-next-line eslint/max-lines-per-function
   useEffect(() => {
     if (!intent || !container) {
@@ -152,7 +150,6 @@ function useVerification(
         controller.abort();
       }
     };
-    // One controller owns the widget callbacks and the network write for this intent.
     // oxlint-disable-next-line eslint/max-lines-per-function
     async function submit(token: string) {
       if (controller.signal.aborted || submitted || !token) {

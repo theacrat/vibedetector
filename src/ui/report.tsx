@@ -42,7 +42,6 @@ function ReportButtons({
 
 // React Aria's modal elements need their own styling hooks, not wrapper divs.
 /* oxlint-disable react/forbid-component-props */
-// The dialog keeps its accessible heading, status and controls together.
 // oxlint-disable-next-line eslint/max-lines-per-function
 function ReportDialog({
   state,
