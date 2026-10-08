@@ -27,6 +27,28 @@ test("unknown providers return a not found page", async ({ page }) => {
   await expect(page.getByText(/not found/iu).first()).toBeVisible();
 });
 
+test("all provider paths return server-rendered content without JavaScript", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  try {
+    await Promise.all(
+      ["claude", "chatgpt", "gemini", "copilot", "grok", "mistral", "deepseek", "cursor"].map(
+        async (id) => {
+          const response = await context.request.get(`/${id}`);
+          expect(response.status()).toBe(200);
+          expect(await response.text()).toContain("issue reports this hour");
+        },
+      ),
+    );
+    await page.goto("/gemini");
+    await expect(page.getByRole("heading", { name: "How's Gemini feeling?" })).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
 test("report API rejects cross-origin and unverified submissions", async ({ request }) => {
   const foreign = await request.post("/api/reports/claude", {
     data: { category: "slow", token: "invalid" },
