@@ -10,7 +10,7 @@ Community reports of AI quality, latency and availability, not official outage d
 
 `Dashboard` contains UTC-aligned buckets, hourly count, baseline and verdict. Ranges are 6h (15-minute buckets), 24h (30-minute buckets) and 7d (3-hour buckets). Insufficient history or volume means insufficient data, never good vibes.
 
-Include the partial boundary buckets needed to cover the full selected duration. Label the newest bucket as a partial UTC interval, not a rolling count. The hero separately counts the actual trailing hour. Session responses identify their fixed reporting window; mutations reject stale windows so an hour rollover cannot falsely undo an earlier contribution.
+Include the partial boundary buckets needed to cover the full selected duration. Label the newest count as `since <device-local time>`, not a rolling count. Chart labels use the device timezone after hydration, while storage and aggregation remain UTC. The hero separately counts the actual trailing hour. Session responses identify their fixed reporting window; mutations reject stale windows so an hour rollover cannot falsely undo an earlier contribution.
 
 The wire field `window` is an integer UTC hour index, not a timestamp. Its next boundary in milliseconds is `(window + 1) * 3_600_000`. A report from an earlier window remains historical data; undo applies only to the active window.
 
