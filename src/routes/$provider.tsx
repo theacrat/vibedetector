@@ -127,7 +127,11 @@ function ProviderHero({ dashboard }: { dashboard: Dashboard }) {
         </h1>
         <p className="verdict" style={verdictStyle}>
           <span className="dot" aria-hidden="true" />
-          {dashboard.verdict}
+          {dashboard.verdict === "insufficient community data" ? (
+            <a href="/methodology">{dashboard.verdict}</a>
+          ) : (
+            dashboard.verdict
+          )}
         </p>
         <p className="sub">
           <b>{dashboard.hourly.toLocaleString("en-GB")}</b>
