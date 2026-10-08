@@ -89,7 +89,12 @@ function mountWidget(
       sitekey: siteKey,
     }),
   };
-  api.execute(widget.id);
+  try {
+    api.execute(widget.id);
+  } catch (error) {
+    api.remove(widget.id);
+    throw error;
+  }
   return widget;
 }
 

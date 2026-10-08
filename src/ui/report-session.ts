@@ -53,17 +53,8 @@ function useReportState() {
   };
 }
 
-function useReportWindow(id: ProviderId, state: ReportState) {
-  const { session, pending, setSession, setReportError } = state;
-  const refreshWindow = useEffectEvent(async () => {
-    try {
-      setSession(await readSession(id));
-    } catch (error) {
-      setReportError(
-        error instanceof Error ? error.message : "Could not refresh your reporting window.",
-      );
-    }
-  });
+function useInitialSession(id: ProviderId, state: ReportState) {
+  const { setSession, setReportError } = state;
   useEffect(() => {
     const controller = new AbortController();
     async function initialize() {
@@ -83,18 +74,39 @@ function useReportWindow(id: ProviderId, state: ReportState) {
       controller.abort();
     };
   }, [id, setSession, setReportError]);
+}
+
+function useReportWindow(id: ProviderId, state: ReportState) {
+  const { session, pending, setSession, setReportError } = state;
+  useInitialSession(id, state);
+  const refreshWindow = useEffectEvent(async (signal: AbortSignal) => {
+    try {
+      const next = await readSession(id, signal);
+      if (!signal.aborted && !pending) {
+        setSession(next);
+      }
+    } catch (error) {
+      if (!signal.aborted && !pending) {
+        setReportError(
+          error instanceof Error ? error.message : "Could not refresh your reporting window.",
+        );
+      }
+    }
+  });
   useEffect(() => {
     if (!session || pending) {
       return;
     }
+    const controller = new AbortController();
     const timer = globalThis.setTimeout(
       () => {
-        void refreshWindow();
+        void refreshWindow(controller.signal);
       },
       reportingWindowDelay(session.window, Date.now()),
     );
     return () => {
       globalThis.clearTimeout(timer);
+      controller.abort();
     };
   }, [session, pending]);
 }
