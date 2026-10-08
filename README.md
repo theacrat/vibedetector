@@ -31,7 +31,7 @@ These are the GitHub Actions gates and the local equivalent while Actions billin
 
 Deployment requires explicit approval. No deployment runs automatically from CI.
 
-1. Create a production D1 database named `vibedetector`. Set its `database_id` in `wrangler.jsonc`.
+1. Confirm the production D1 database `vibedetector-community-production` and its `database_id` in `wrangler.jsonc`. The older `vibedetector` database has an unrelated schema and must not be migrated by this service.
 2. Create a managed Turnstile widget restricted to `vibedetector.net`. Set `TURNSTILE_SITE_KEY` in Wrangler vars and `TURNSTILE_SECRET_KEY` through Wrangler secrets. Never commit the secret.
 3. Confirm the target Cloudflare account and ownership of the domain.
 4. Apply production migrations with `bunx wrangler d1 migrations apply DB --remote` after approval.

@@ -233,9 +233,10 @@ test("live dummy Siteverify shape is accepted only for exact local test keys", a
       },
     },
     TURNSTILE_HOSTNAME: "vibedetector.net",
-    TURNSTILE_SITE_KEY: "",
+    TURNSTILE_SITE_KEY: "0x4AAAAAAFROSyaakxb3TQIa",
   };
   const config = challengeConfig(bindings, "localhost");
+  expect(config.siteKey).toBe("1x00000000000000000000AA");
   const result = {
     challenge_ts: "2026-10-08T20:00:00Z",
     "error-codes": [],
@@ -270,7 +271,7 @@ test("API persists reports and fails closed on challenge, rate-limit and databas
       },
     },
     TURNSTILE_HOSTNAME: "vibedetector.net",
-    TURNSTILE_SITE_KEY: "",
+    TURNSTILE_SITE_KEY: "0x4AAAAAAFROSyaakxb3TQIa",
   };
   const verify: VerifyFetch = async () => {
     challenges += 1;
