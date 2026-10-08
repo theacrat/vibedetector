@@ -11,10 +11,12 @@ export function usePublicRefresh(refresh: () => Promise<void>) {
     }
   });
   useEffect(() => {
-    const timer = window.setInterval(() => {
+    const timer = globalThis.setInterval(() => {
       void tick();
     }, 60_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      globalThis.clearInterval(timer);
+    };
   }, []);
   return error;
 }

@@ -1,8 +1,15 @@
 import { Link } from "@tanstack/react-router";
+import { useMemo } from "react";
 
 import type { Overview } from "@/domain";
 
+const defaultSearch = { range: "24h" as const };
+
 export function ProviderGrid({ overview }: { overview: Overview[] }) {
+  const paramsById = useMemo(
+    () => new Map(overview.map(({ provider }) => [provider.id, { provider: provider.id }])),
+    [overview],
+  );
   return (
     <div className="grid">
       {overview.map(({ provider, hourly, buckets }) => {
@@ -14,13 +21,18 @@ export function ProviderGrid({ overview }: { overview: Overview[] }) {
               `${index === 0 ? "M" : "L"}${(index / Math.max(1, totals.length - 1)) * 200},${44 - (total / max) * 44}`,
           )
           .join(" ");
+        const params = paramsById.get(provider.id);
+        if (!params) {
+          return;
+        }
+
         return (
           <article className="card" key={provider.id}>
             <Link
               className="card-main"
               to="/$provider"
-              params={{ provider: provider.id }}
-              search={{ range: "24h" }}
+              params={params}
+              search={defaultSearch}
               aria-label={`View ${provider.name} reports`}
             >
               <div className="card-top">
@@ -35,7 +47,10 @@ export function ProviderGrid({ overview }: { overview: Overview[] }) {
                   vectorEffect="non-scaling-stroke"
                 />
               </svg>
-              <span className="card-count">{hourly.toLocaleString("en-GB")} reports this hour</span>
+              <span className="card-count">
+                {hourly.toLocaleString("en-GB")}
+                {" reports this hour"}
+              </span>
             </Link>
           </article>
         );

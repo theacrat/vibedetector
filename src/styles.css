@@ -51,7 +51,6 @@ a {
   color: inherit;
 }
 
-/* header */
 .top {
   display: flex;
   align-items: center;
@@ -89,7 +88,6 @@ a {
   padding: clamp(24px, 5vw, 56px) clamp(16px, 4vw, 48px) 40px;
 }
 
-/* hero */
 .hero {
   display: grid;
   grid-template-columns: 1.2fr 1fr;
@@ -188,7 +186,6 @@ a:focus-visible,
   outline-offset: 4px;
 }
 
-/* report buttons */
 .report {
   background: var(--ink-2);
   border: 1px solid var(--line);
@@ -306,7 +303,6 @@ a:focus-visible,
   font-family: var(--mono);
 }
 
-/* chart */
 .chart-card {
   --chart-padding: clamp(14px, 3vw, 28px);
   background: var(--ink-2);
@@ -498,7 +494,6 @@ a:focus-visible,
   letter-spacing: -0.02em;
 }
 
-/* elsewhere */
 .elsewhere {
   margin-top: 56px;
 }
@@ -583,7 +578,6 @@ a:focus-visible,
   visibility: visible;
 }
 
-/* mobile */
 @media (max-width: 860px) {
   .hero {
     grid-template-columns: 1fr;
@@ -732,4 +726,18 @@ button[data-focus-visible] {
 }
 .skip-link:focus {
   transform: translateY(0);
+}
+
+fieldset.btns {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+fieldset.ranges {
+  margin: 0;
+  min-width: 0;
+}
+output.hint {
+  display: block;
 }

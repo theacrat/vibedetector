@@ -1,47 +1,58 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { providers, type Dashboard } from "@/domain";
-
-import { Chart, timeLabel } from "./chart";
+import { providers } from "@/domain";
+import type { Dashboard } from "@/domain";
+import { Chart } from "@/ui/chart";
+import { timeLabel } from "@/ui/chart-label";
 
 const empty: Dashboard = {
+  asOf: 0,
+  // Dashboard uses null for insufficient historical data.
+  // oxlint-disable-next-line unicorn/no-null
+  baseline: null,
+  buckets: [
+    { broken: 0, nerfed: 0, slow: 0, t: 0 },
+    { broken: 0, nerfed: 0, slow: 0, t: 1_800_000 },
+  ],
+  hourly: 0,
   provider: providers[0],
   range: "24h",
-  hourly: 0,
-  baseline: null,
   verdict: "insufficient community data",
-  asOf: 0,
+};
+
+function recordRange(range: string) {
+  expect(["6h", "24h", "7d"]).toContain(range);
+}
+
+const dashboard: Dashboard = {
+  ...empty,
+  baseline: 4,
   buckets: [
-    { t: 0, nerfed: 0, slow: 0, broken: 0 },
-    { t: 1_800_000, nerfed: 0, slow: 0, broken: 0 },
+    { broken: 1, nerfed: 2, slow: 4, t: 0 },
+    { broken: 0, nerfed: 0, slow: 8, t: 1_800_000 },
   ],
+  hourly: 8,
 };
 
 describe("community reports chart", () => {
   it("renders empty activity without inventing a category or baseline", () => {
     const html = renderToStaticMarkup(
-      <Chart dashboard={empty} onRange={() => {}} pending={false} />,
+      <Chart dashboard={empty} onRange={recordRange} pending={false} />,
     );
     expect(html).toContain("No community reports yet");
     expect(html).toContain("Not enough history for a normal baseline.");
     expect(html).toContain("Most reported</span><b>—</b>");
     expect(html).not.toContain('class="baseline"');
     expect(html).not.toContain("NaN");
+    expect(html).toContain("in current 30 min bucket (partial)");
+    expect(html.indexOf(">6h</button>")).toBeLessThan(html.indexOf(">24h</button>"));
+    expect(html.indexOf(">24h</button>")).toBeLessThan(html.indexOf(">7d</button>"));
   });
 
   it("renders the supplied category totals and peak", () => {
-    const dashboard: Dashboard = {
-      ...empty,
-      buckets: [
-        { t: 0, nerfed: 2, slow: 4, broken: 1 },
-        { t: 1_800_000, nerfed: 0, slow: 8, broken: 0 },
-      ],
-      baseline: 4,
-      hourly: 8,
-    };
     const html = renderToStaticMarkup(
-      <Chart dashboard={dashboard} onRange={() => {}} pending={true} />,
+      <Chart dashboard={dashboard} onRange={recordRange} pending />,
     );
     expect(html).toContain("Peak 8. Most reported slow.");
     expect(html).toContain("2.0×");

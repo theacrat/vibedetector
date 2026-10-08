@@ -3,43 +3,45 @@ import { Button } from "react-aria-components";
 
 import "@/styles.css";
 
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "vibedetector - how's your AI feeling?" },
-      {
-        name: "description",
-        content:
-          "Community reports of AI quality, latency and availability. Not official service status.",
-      },
-    ],
-    links: [
-      { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      {
-        rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=JetBrains+Mono:wght@500;700&display=swap",
-      },
-    ],
-  }),
+const Route = createRootRoute({
+  // The file route and component reference each other.
+  // oxlint-disable-next-line eslint/no-use-before-define
   component: Root,
-  notFoundComponent: () => (
-    <main className="wrap prose">
-      <h1>AI not found.</h1>
-      <p>
-        Choose a provider from the <Link to="/">homepage</Link>.
-      </p>
-    </main>
-  ),
   errorComponent: ({ reset }) => (
     <main className="wrap prose">
-      <h1>Couldn't load this page.</h1>
+      <h1>Couldn&apos;t load this page.</h1>
       <p role="alert">Please check your connection and try again.</p>
       <Button onPress={reset} className="plain-button">
         Try again
       </Button>
+    </main>
+  ),
+  head: () => ({
+    links: [
+      { href: "https://fonts.googleapis.com", rel: "preconnect" },
+      { crossOrigin: "anonymous", href: "https://fonts.gstatic.com", rel: "preconnect" },
+      {
+        href: "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=JetBrains+Mono:wght@500;700&display=swap",
+        rel: "stylesheet",
+      },
+    ],
+    meta: [
+      { charSet: "utf8" },
+      { content: "width=device-width, initial-scale=1", name: "viewport" },
+      { title: "vibedetector - how's your AI feeling?" },
+      {
+        content:
+          "Community reports of AI quality, latency and availability. Not official service status.",
+        name: "description",
+      },
+    ],
+  }),
+  notFoundComponent: () => (
+    <main className="wrap prose">
+      <h1>AI not found.</h1>
+      <p>
+        Choose a provider from the<Link to="/">homepage</Link>.
+      </p>
     </main>
   ),
 });
@@ -102,3 +104,5 @@ function Root() {
     </html>
   );
 }
+
+export { Route };
