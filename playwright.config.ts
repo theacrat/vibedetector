@@ -13,4 +13,5 @@ export default defineConfig({
     timeout: 120_000,
     url: "http://127.0.0.1:41873",
   },
+  workers: 1,
 });
