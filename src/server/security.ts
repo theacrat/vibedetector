@@ -16,9 +16,10 @@ function challengeConfig(
   hostname: string,
 ): { siteKey: string; secret: string; hostname: string; local: boolean } {
   const local = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
-  const siteKey = bindings.TURNSTILE_SITE_KEY || (local ? TEST_SITE_KEY : "");
   const configuredSecret = bindings.TURNSTILE_SECRET_KEY ?? "";
-  const secret = configuredSecret === "" && local ? TEST_SECRET : configuredSecret;
+  const useTestKeys = configuredSecret === "" && local;
+  const siteKey = useTestKeys ? TEST_SITE_KEY : bindings.TURNSTILE_SITE_KEY;
+  const secret = useTestKeys ? TEST_SECRET : configuredSecret;
   if (
     !siteKey ||
     !secret ||
