@@ -7,7 +7,7 @@ import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import { providers } from "@/domain";
 import { aggregate } from "@/server/aggregation";
 import { handleApi } from "@/server/api";
-import { loadModels } from "@/server/catalogue";
+import { loadModels, orderModels } from "@/server/catalogue";
 import { dashboardFromDatabase } from "@/server/queries";
 import { browserIdentity, challengeConfig, readJson, verifyChallenge } from "@/server/security";
 import type { VerifyFetch } from "@/server/security";
@@ -965,14 +965,28 @@ test("catalogue additions and states persist without reseeding and preserve arch
   });
   expect(await apiStatus(report("slow"), bindings)).toBe(200);
   const historical = await dashboardFromDatabase(db, "claude", "24h", Date.now(), model.name);
-  expect(historical.model).toBe(model.name);
+  expect(historical.model).toBe("");
   expect(historical.buckets.reduce((total, bucket) => total + bucket.slow, 0)).toBe(1);
+  expect(historical.models).toEqual(
+    providerModels.claude.map((name) => ({ active: true, name, provider: "claude" })),
+  );
+  const publicModels = await handleApi(new Request("http://localhost/api/models/claude"), bindings);
+  const publicBody: unknown = await publicModels.json();
+  expect(publicBody).toEqual(
+    providerModels.claude.map((name) => ({ active: true, name, provider: "claude" })),
+  );
   expect(await apiStatus(report(null), bindings)).toBe(200);
   expect(await apiStatus(report("broken"), bindings)).toBe(400);
   expect(
     await apiStatus(adminRequest("models/state", { ...model, active: true }, cookie), bindings),
   ).toBe(200);
   expect(await apiStatus(report("broken"), bindings)).toBe(200);
+  const restoredModels = await handleApi(
+    new Request("http://localhost/api/models/claude"),
+    bindings,
+  );
+  const restoredBody: unknown = await restoredModels.json();
+  expect(restoredBody).toContainEqual({ ...model, active: true });
   await db
     .prepare("UPDATE models SET active = 0 WHERE provider = 'chatgpt' AND name = 'GPT-6 Astra'")
     .run();
@@ -981,5 +995,347 @@ test("catalogue additions and states persist without reseeding and preserve arch
     active: false,
     name: "GPT-6 Astra",
     provider: "chatgpt",
+  });
+});
+
+test("archived and arbitrary named graph requests normalize to all without changing provider metrics", async () => {
+  const db = await database();
+  const bindings = adminBindings(db);
+  const now = Date.now();
+  await saveReport(db, "claude", "archived", "slow", now - 10, "Claude Opus 5.5");
+  await saveReport(db, "claude", "active", "broken", now - 10, "Claude Sonnet 5.5");
+  await db
+    .prepare("UPDATE models SET active = 0 WHERE provider = 'claude' AND name = 'Claude Opus 5.5'")
+    .run();
+  for (const name of ["Claude Opus 5.5", "arbitrary old model"]) {
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    const response = await handleApi(
+      new Request(`http://localhost/api/providers/claude?model=${encodeURIComponent(name)}`),
+      bindings,
+    );
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    const body: unknown = await response.json();
+    expect(body).toMatchObject({
+      baseline: null,
+      hourly: 2,
+      model: "",
+      verdict: "insufficient community data",
+    });
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    const dashboard = await dashboardFromDatabase(db, "claude", "24h", now, name);
+    expect(dashboard.model).toBe("");
+    expect(
+      dashboard.buckets.reduce((total, bucket) => total + bucket.slow + bucket.broken, 0),
+    ).toBe(2);
+  }
+  const active = await dashboardFromDatabase(db, "claude", "24h", now, "Claude Sonnet 5.5");
+  expect(active.model).toBe("Claude Sonnet 5.5");
+  expect(active.buckets.reduce((total, bucket) => total + bucket.slow + bucket.broken, 0)).toBe(1);
+  expect(active.hourly).toBe(2);
+  expect(await loadReports(db, "claude", now)).toHaveLength(2);
+});
+
+test("admin order persists full provider permutations, rejects invalid requests without writes and appends new models", async () => {
+  const db = await database();
+  await db
+    .prepare(
+      "DELETE FROM models WHERE provider = 'claude' AND name NOT IN ('Claude Opus 5.5', 'Claude Sonnet 5.5')",
+    )
+    .run();
+  const bindings = adminBindings(db);
+  const login = await handleApi(adminRequest("login", { key: adminKey }), bindings);
+  const cookie = cookieHeader(login);
+  await handleApi(
+    adminRequest("models", { name: "Claude Archived", provider: "claude" }, cookie),
+    bindings,
+  );
+  await handleApi(
+    adminRequest(
+      "models/state",
+      { active: false, name: "Claude Archived", provider: "claude" },
+      cookie,
+    ),
+    bindings,
+  );
+  const before = await db
+    .prepare(
+      "SELECT provider, name, active, position FROM models ORDER BY provider, position, name",
+    )
+    .all();
+  const names = ["Claude Sonnet 5.5", "Claude Archived", "Claude Opus 5.5"];
+  for (const body of [
+    { names: ["Claude Sonnet 5.5", "Claude Opus 5.5"], provider: "claude" },
+    { names: ["Claude Archived", "Claude Archived", "Claude Opus 5.5"], provider: "claude" },
+    { names: ["GPT-6 Astra", "Claude Archived", "Claude Opus 5.5"], provider: "claude" },
+    { names: ["Unknown", "Claude Archived", "Claude Opus 5.5"], provider: "claude" },
+    { names, provider: "unknown" },
+    { names: "bad", provider: "claude" },
+    { names: [1, "Claude Archived", "Claude Opus 5.5"], provider: "claude" },
+  ]) {
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    expect(await apiStatus(adminRequest("models/order", body, cookie), bindings)).toBe(400);
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    const unchanged = await db
+      .prepare(
+        "SELECT provider, name, active, position FROM models ORDER BY provider, position, name",
+      )
+      .all();
+    expect(unchanged.results).toEqual(before.results);
+  }
+  const order = { names, provider: "claude" };
+  expect(await apiStatus(adminRequest("models/order", order), bindings)).toBe(401);
+  expect(
+    await apiStatus(adminRequest("models/order", order, cookie, "https://evil.invalid"), bindings),
+  ).toBe(403);
+  const absentOrigin = adminRequest("models/order", order, cookie);
+  absentOrigin.headers.delete("Origin");
+  expect(await apiStatus(absentOrigin, bindings)).toBe(403);
+  expect(await apiStatus(adminRequest("models/order", undefined, cookie), bindings)).toBe(405);
+  expect(await apiStatus(adminRequest("models/order", order, cookie), bindings)).toBe(200);
+  expect(await apiStatus(adminRequest("models/order", order, cookie), bindings)).toBe(200);
+  const ordered = await db
+    .prepare("SELECT name, position FROM models WHERE provider = 'claude' ORDER BY position")
+    .all();
+  expect(ordered.results).toEqual([
+    { name: "Claude Sonnet 5.5", position: 0 },
+    { name: "Claude Archived", position: 1 },
+    { name: "Claude Opus 5.5", position: 2 },
+  ]);
+  const other = await db
+    .prepare(
+      "SELECT provider, name, active, position FROM models WHERE provider != 'claude' ORDER BY provider, position, name",
+    )
+    .all();
+  expect(other.results).toEqual(before.results.filter((row) => row["provider"] !== "claude"));
+  const reload = await handleApi(adminRequest("models", undefined, cookie), bindings);
+  const reloadBody: unknown = await reload.json();
+  expect(reloadBody).toContainEqual({ active: false, name: "Claude Archived", provider: "claude" });
+  const reloadedModels = await loadModels(db, "claude");
+  expect(reloadedModels.map((model) => model.name)).toEqual(names);
+  const publicList = await handleApi(new Request("http://localhost/api/models/claude"), bindings);
+  const publicBody: unknown = await publicList.json();
+  expect(publicBody).toEqual([
+    { active: true, name: "Claude Sonnet 5.5", provider: "claude" },
+    { active: true, name: "Claude Opus 5.5", provider: "claude" },
+  ]);
+  const dashboard = await dashboardFromDatabase(db, "claude", "24h", Date.now());
+  expect(publicBody).toEqual(dashboard.models);
+  const session = await handleApi(new Request("http://localhost/api/session/claude"), bindings);
+  const sessionBody: unknown = await session.json();
+  expect(sessionBody).toMatchObject({ models: publicBody });
+  await Promise.all(
+    ["Claude New A", "Claude New B"].map(async (name) => {
+      expect(
+        await apiStatus(adminRequest("models", { name, provider: "claude" }, cookie), bindings),
+      ).toBe(200);
+    }),
+  );
+  const appended = await db
+    .prepare("SELECT name, position FROM models WHERE provider = 'claude' ORDER BY position")
+    .all<{ name: string; position: number }>();
+  expect(ordered.results).toEqual(appended.results.slice(0, 3));
+  expect(
+    appended.results
+      .slice(3)
+      .map((row) => row.name)
+      .toSorted(),
+  ).toEqual(["Claude New A", "Claude New B"]);
+  expect(appended.results.map((row) => row.position)).toEqual([0, 1, 2, 3, 4]);
+});
+
+test("competing complete orders leave one winning permutation without mixed positions", async () => {
+  const db = await database();
+  const catalogue = await loadModels(db, "claude");
+  const names = catalogue.map((model) => model.name);
+  const reversed = names.toReversed();
+  const rotated = [...names.slice(1), names[0]];
+  await Promise.all([
+    orderModels(db, { names: reversed, provider: "claude" }),
+    orderModels(db, { names: rotated, provider: "claude" }),
+  ]);
+  const result = await db
+    .prepare("SELECT name, position FROM models WHERE provider = 'claude' ORDER BY position")
+    .all<{ name: string; position: number }>();
+  const actual = result.results.map((row) => row.name);
+  expect([reversed, rotated]).toContainEqual(actual);
+  expect(result.results.map((row) => row.position)).toEqual(names.map((_name, index) => index));
+});
+
+test("large catalogue orders use the admin body limit and new models stop at 256", async () => {
+  const db = await database();
+  const bindings = adminBindings(db);
+  const login = await handleApi(adminRequest("login", { key: adminKey }), bindings);
+  const cookie = cookieHeader(login);
+  const longNames = Array.from(
+    { length: 34 },
+    (_value, index) => `Claude Long ${String(index).padStart(2, "0")} ${"x".repeat(100)}`,
+  );
+  for (const name of longNames) {
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    const status = await apiStatus(
+      adminRequest("models", { name, provider: "claude" }, cookie),
+      bindings,
+    );
+    expect(status).toBe(200);
+  }
+  const allModels = await loadModels(db, "claude");
+  const names = allModels.map((model) => model.name).toReversed();
+  expect(JSON.stringify({ names, provider: "claude" }).length).toBeGreaterThan(4096);
+  expect(
+    await apiStatus(adminRequest("models/order", { names, provider: "claude" }, cookie), bindings),
+  ).toBe(200);
+  const orderedModels = await loadModels(db, "claude");
+  expect(orderedModels.map((model) => model.name)).toEqual(names);
+
+  const oversized = JSON.stringify({ names: [...names, "z".repeat(1200)], provider: "claude" });
+  const streamed = new Request("http://localhost/api/admin/models/order", {
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(oversized));
+        controller.enqueue(new Uint8Array(262_145));
+        controller.close();
+      },
+    }),
+    headers: { "Content-Type": "application/json", Cookie: cookie, Origin: "http://localhost" },
+    method: "POST",
+  });
+  expect(await apiStatus(streamed, bindings)).toBe(413);
+  const oversizedHeader = adminRequest("models/order", { names, provider: "claude" }, cookie);
+  oversizedHeader.headers.set("Content-Length", "262145");
+  expect(await apiStatus(oversizedHeader, bindings)).toBe(413);
+  const hugeName = "x".repeat(5000);
+  expect(
+    await apiStatus(
+      adminRequest("models", { name: hugeName, provider: "claude" }, cookie),
+      bindings,
+    ),
+  ).toBe(413);
+
+  const count = await db
+    .prepare("SELECT COUNT(*) AS total FROM models WHERE provider = 'claude'")
+    .first<number>("total");
+  expect(count).toBeGreaterThan(0);
+  for (let index = count ?? 0; index < 255; index += 1) {
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    const status = await apiStatus(
+      adminRequest("models", { name: `Claude Capacity ${index}`, provider: "claude" }, cookie),
+      bindings,
+    );
+    expect(status).toBe(200);
+  }
+  const racing = await Promise.all(
+    ["Claude Capacity A", "Claude Capacity B"].map(async (name) =>
+      apiStatus(adminRequest("models", { name, provider: "claude" }, cookie), bindings),
+    ),
+  );
+  expect(racing.toSorted((left, right) => left - right)).toEqual([200, 400]);
+  expect(
+    await apiStatus(
+      adminRequest("models", { name: "Claude Capacity Overflow", provider: "claude" }, cookie),
+      bindings,
+    ),
+  ).toBe(400);
+  const finalCount = await db
+    .prepare("SELECT COUNT(*) AS total FROM models WHERE provider = 'claude'")
+    .first<number>("total");
+  expect(finalCount).toBe(256);
+  const fullCatalogue = await loadModels(db, "claude");
+  const fullNames = fullCatalogue.map((model) => model.name).toReversed();
+  expect(
+    await apiStatus(
+      adminRequest("models/order", { names: fullNames, provider: "claude" }, cookie),
+      bindings,
+    ),
+  ).toBe(200);
+  expect(
+    await apiStatus(
+      adminRequest("models/order", { names: [...fullNames, "extra"], provider: "claude" }, cookie),
+      bindings,
+    ),
+  ).toBe(400);
+  expect(
+    await apiStatus(
+      adminRequest("models", { name: longNames[0], provider: "claude" }, cookie),
+      bindings,
+    ),
+  ).toBe(200);
+  expect(
+    await db
+      .prepare("SELECT COUNT(*) AS total FROM models WHERE provider = 'claude'")
+      .first<number>("total"),
+  ).toBe(256);
+});
+
+test("catalogue changes between order validation and D1 batch leave all positions untouched", async () => {
+  const db = await database();
+  await db
+    .prepare(
+      "DELETE FROM models WHERE provider = 'claude' AND name NOT IN ('Claude Opus 5.5', 'Claude Sonnet 5.5')",
+    )
+    .run();
+  const guardedDb = new Proxy(db, {
+    get(target, property) {
+      if (property === "batch") {
+        return async (statements: D1PreparedStatement[]) => {
+          await target
+            .prepare(
+              "INSERT INTO models (provider, name, active, position) VALUES ('claude', 'Concurrent model', 1, 99)",
+            )
+            .run();
+          return target.batch(statements);
+        };
+      }
+      const value: unknown = Reflect.get(target, property);
+      return value;
+    },
+  });
+  expect(
+    await errorStatus(
+      orderModels(guardedDb, {
+        names: ["Claude Sonnet 5.5", "Claude Opus 5.5"],
+        provider: "claude",
+      }),
+    ),
+  ).toBe(409);
+  const rows = await db
+    .prepare("SELECT name, position FROM models WHERE provider = 'claude' ORDER BY position")
+    .all();
+  expect(rows.results).toEqual([
+    { name: "Claude Opus 5.5", position: 0 },
+    { name: "Claude Sonnet 5.5", position: 1 },
+    { name: "Concurrent model", position: 99 },
+  ]);
+});
+
+test("archived report exception remains scoped to its identity, provider, hour and nonretracted state", async () => {
+  const db = await database();
+  const now = 100 * HOUR + 10;
+  await saveReport(db, "claude", "owner", "slow", now, "Claude Opus 5.5");
+  await db
+    .prepare("UPDATE models SET active = 0 WHERE provider = 'claude' AND name = 'Claude Opus 5.5'")
+    .run();
+  expect(await saveReport(db, "claude", "owner", "broken", now + 10, "Claude Opus 5.5")).toBe(
+    "broken",
+  );
+  expect(await sessionReport(db, "claude", "owner", now + 20)).toEqual({
+    category: "broken",
+    model: "Claude Opus 5.5",
+  });
+  expect(await errorStatus(saveReport(db, "claude", "other", "slow", now, "Claude Opus 5.5"))).toBe(
+    400,
+  );
+  expect(
+    await errorStatus(saveReport(db, "chatgpt", "owner", "slow", now, "Claude Opus 5.5")),
+  ).toBe(400);
+  expect(
+    await errorStatus(saveReport(db, "claude", "owner", "slow", now + HOUR, "Claude Opus 5.5")),
+  ).toBe(400);
+  expect(await saveReport(db, "claude", "owner", null, now + 30, "Claude Opus 5.5")).toBeNull();
+  expect(
+    await errorStatus(saveReport(db, "claude", "owner", "slow", now + 40, "Claude Opus 5.5")),
+  ).toBe(400);
+  expect(await sessionReport(db, "claude", "owner", now + 50)).toEqual({
+    category: null,
+    model: "Claude Opus 5.5",
   });
 });

@@ -15,7 +15,8 @@ const Route = createFileRoute("/methodology")({
       <p>
         Model names are optional report details. Model filters only change the reports shown in the
         graph. Provider verdicts and normal activity always use all reports for that provider.
-        Unspecified includes reports submitted without a model name.
+        Unspecified includes reports submitted without a model name. Archived models are no longer
+        available as named graph filters; their reports still count towards provider-wide activity.
       </p>
       <p>
         Switching category updates your current report. Tap the selected category to undo. The
@@ -39,9 +40,8 @@ const Route = createFileRoute("/methodology")({
         feels different.
       </p>
       <p>
-        {
-          "Verdicts compare recent report activity with historical activity. When history or report\n volume is insufficient, we show “insufficient community data” rather than implying good\n service. An empty chart means no community reports in that range, not a healthy service\n guarantee."
-        }
+        Without enough history or reports we show insufficient community data, not good vibes. An
+        empty chart means no reports in that range, not confirmed healthy service.
       </p>
       <h2>Limitations</h2>
       <p>

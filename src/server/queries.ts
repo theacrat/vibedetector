@@ -2,7 +2,7 @@ import { findProvider, isRange, providers } from "@/domain";
 import type { Dashboard, Overview, Range } from "@/domain";
 
 import { aggregate } from "./aggregation";
-import { loadModels } from "./catalogue";
+import { loadActiveModels } from "./catalogue";
 import { loadReports } from "./storage";
 
 async function dashboardFromDatabase(
@@ -16,7 +16,7 @@ async function dashboardFromDatabase(
   if (!provider || !isRange(range)) {
     throw new Error("Invalid dashboard query");
   }
-  const models = await loadModels(db, provider.id);
+  const models = await loadActiveModels(db, provider.id);
   const filter =
     model === "unspecified" || models.some((entry) => entry.name === model) ? model : "";
   return {

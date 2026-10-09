@@ -2,7 +2,7 @@ import { findProvider, isCategory, isRange } from "@/domain";
 import type { Category, ProviderId } from "@/domain";
 
 import { handleAdmin } from "./admin";
-import { isModelName, loadModels } from "./catalogue";
+import { isModelName, loadActiveModels } from "./catalogue";
 import { dashboardFromDatabase, overviewFromDatabase } from "./queries";
 import { ApiError, browserIdentity, challengeConfig, readJson, verifyChallenge } from "./security";
 import type { VerifyFetch } from "./security";
@@ -96,11 +96,11 @@ async function session(
   const config = challengeConfig(bindings, new URL(request.url).hostname);
   const identity = await browserIdentity(request);
   const report = await sessionReport(bindings.DB, provider, identity.hash, now);
-  const models = await loadModels(bindings.DB, provider);
+  const models = await loadActiveModels(bindings.DB, provider);
   return json(
     {
       ...report,
-      models: models.filter((entry) => entry.active),
+      models,
       siteKey: config.siteKey,
       window: Math.floor(now / HOUR),
     },
@@ -139,7 +139,7 @@ async function providerApi(
     return json(await dashboardFromDatabase(bindings.DB, provider.id, range, now, model));
   }
   if (route === "models") {
-    return json(await loadModels(bindings.DB, provider.id));
+    return json(await loadActiveModels(bindings.DB, provider.id));
   }
   if (route === "session") {
     return session(request, bindings, provider.id, now);

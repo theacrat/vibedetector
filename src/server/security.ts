@@ -57,7 +57,7 @@ async function browserIdentity(request: Request): Promise<{ hash: string; cookie
   return { cookie, hash };
 }
 
-async function readJson(request: Request): Promise<unknown> {
+async function readJson(request: Request, maxBytes = 4096): Promise<unknown> {
   if (request.headers.get("Origin") !== new URL(request.url).origin) {
     throw new ApiError(403, "Origin rejected");
   }
@@ -66,7 +66,7 @@ async function readJson(request: Request): Promise<unknown> {
   ) {
     throw new ApiError(415, "Expected application/json");
   }
-  if (Number(request.headers.get("Content-Length")) > 4096) {
+  if (Number(request.headers.get("Content-Length")) > maxBytes) {
     throw new ApiError(413, "Body too large");
   }
   const reader: ReadableStreamDefaultReader<Uint8Array> | undefined = request.body?.getReader();
@@ -84,7 +84,7 @@ async function readJson(request: Request): Promise<unknown> {
         break;
       }
       size += chunk.value.byteLength;
-      if (size > 4096) {
+      if (size > maxBytes) {
         // Cancellation must finish before releasing the stream lock.
         // oxlint-disable-next-line eslint/no-await-in-loop
         await reader.cancel();

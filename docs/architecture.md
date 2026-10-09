@@ -12,6 +12,7 @@ Optional model reporting adds `/zai` and `/kimi`; their reports use the same pro
 Reports may include a provider-scoped model label as nullable metadata. Model selection does not create an additional contribution, change the deduplication window, or change provider verdict algorithms. Graph filters affect displayed category buckets only; provider totals and baselines remain unfiltered.
 
 Model options are managed in D1. Initial edited lists are migration seeds only. The key-protected admin panel archives/reactivates immutable names so historical reports remain filterable. `docs/model-admin.md` defines authentication and catalogue boundaries.
+Archived model names are now hidden from public catalogue and named graph-filter access; stored reports still contribute to provider-wide totals. `docs/catalogue-ordering.md` defines the updated visibility and persisted admin ordering contract.
 
 `Dashboard` contains UTC-aligned buckets, hourly count, baseline and verdict. Ranges are 6h (15-minute buckets), 24h (30-minute buckets) and 7d (3-hour buckets). Insufficient history or volume means insufficient data, never good vibes.
 

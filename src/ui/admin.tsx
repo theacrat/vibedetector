@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, SubmitEvent } from "react";
 
 import { providers } from "@/domain";
@@ -135,7 +135,10 @@ function AdminCatalogue({ state }: { state: AdminState }) {
   const logout = useCallback(() => {
     void state.run("/api/admin/logout");
   }, [state]);
-  const models = state.models?.filter((model) => model.provider === provider) ?? [];
+  const models = useMemo(
+    () => state.models?.filter((model) => model.provider === provider) ?? [],
+    [provider, state.models],
+  );
   return (
     <section className="admin-panel" aria-labelledby="catalogue-title">
       <div className="admin-heading">
@@ -178,9 +181,15 @@ function AdminCatalogue({ state }: { state: AdminState }) {
         <p>No models for this provider.</p>
       ) : (
         <ul className="admin-models">
-          {models.map((model) => (
+          {models.map((model, index) => (
             // oxlint-disable-next-line eslint/no-use-before-define
-            <AdminModel key={model.name} model={model} state={state} />
+            <AdminModel
+              key={model.name}
+              model={model}
+              models={models}
+              index={index}
+              state={state}
+            />
           ))}
         </ul>
       )}
@@ -188,7 +197,50 @@ function AdminCatalogue({ state }: { state: AdminState }) {
   );
 }
 
-function AdminModel({ model, state }: { model: ModelOption; state: AdminState }) {
+// oxlint-disable-next-line eslint/max-lines-per-function
+function AdminModel({
+  model,
+  models,
+  index,
+  state,
+}: {
+  model: ModelOption;
+  models: ModelOption[];
+  index: number;
+  state: AdminState;
+}) {
+  const up = useRef<HTMLButtonElement>(null);
+  const down = useRef<HTMLButtonElement>(null);
+  const moved = useRef<"up" | "down" | undefined>(undefined);
+  useEffect(() => {
+    if (!state.pending && moved.current) {
+      const preferred = moved.current === "up" ? up.current : down.current;
+      const alternative = moved.current === "up" ? down.current : up.current;
+      (preferred?.disabled ? alternative : preferred)?.focus();
+      moved.current = undefined;
+    }
+  }, [state.pending]);
+  const move = useCallback(
+    (direction: "up" | "down") => {
+      const names = models.map((entry) => entry.name);
+      const adjacent = index + (direction === "up" ? -1 : 1);
+      const neighbour = names[adjacent];
+      if (state.pending || neighbour === undefined) {
+        return;
+      }
+      names[adjacent] = model.name;
+      names[index] = neighbour;
+      moved.current = direction;
+      void state.run("/api/admin/models/order", { names, provider: model.provider });
+    },
+    [index, model, models, state],
+  );
+  const moveUp = useCallback(() => {
+    move("up");
+  }, [move]);
+  const moveDown = useCallback(() => {
+    move("down");
+  }, [move]);
   const toggle = useCallback(() => {
     void state.run("/api/admin/models/state", { ...model, active: !model.active });
   }, [model, state]);
@@ -198,15 +250,37 @@ function AdminModel({ model, state }: { model: ModelOption; state: AdminState })
         <b>{model.name}</b>
         <small>{model.active ? "Active" : "Archived"}</small>
       </span>
-      <button
-        className="plain-button"
-        type="button"
-        disabled={state.pending}
-        aria-label={`${model.active ? "Archive" : "Reactivate"} ${model.name}`}
-        onClick={toggle}
-      >
-        {model.active ? "Archive" : "Reactivate"}
-      </button>
+      <div className="admin-model-actions">
+        <button
+          className="plain-button"
+          ref={up}
+          type="button"
+          disabled={state.pending || index === 0}
+          aria-label={`Move up ${model.name}`}
+          onClick={moveUp}
+        >
+          Move up
+        </button>
+        <button
+          className="plain-button"
+          ref={down}
+          type="button"
+          disabled={state.pending || index === models.length - 1}
+          aria-label={`Move down ${model.name}`}
+          onClick={moveDown}
+        >
+          Move down
+        </button>
+        <button
+          className="plain-button"
+          type="button"
+          disabled={state.pending}
+          aria-label={`${model.active ? "Archive" : "Reactivate"} ${model.name}`}
+          onClick={toggle}
+        >
+          {model.active ? "Archive" : "Reactivate"}
+        </button>
+      </div>
     </li>
   );
 }

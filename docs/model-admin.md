@@ -1,5 +1,7 @@
 # Database-backed model administration
 
+`docs/catalogue-ordering.md` supersedes archived public-filter visibility: archived entries are admin-only choices and cannot be used to retrieve named historical graphs. It also adds persisted provider-scoped model ordering. Storage retention and provider-wide algorithms are unchanged.
+
 Supersedes hardcoded runtime model validation in `docs/model-reporting.md`. Preserve the user's current edited list as initial seed data only. A D1 `models` table keyed by provider/name is the source of truth. Names are immutable once created; admins add models or archive/reactivate them, not rename/delete history. Archived models remain available for graph filters and existing report restoration, but cannot be selected for a new named-model report. Retraction of an existing archived report remains possible. No model-level algorithm is added.
 
 An existing non-retracted report may change category while retaining its archived model. Authorise that exception against the current persisted browser/provider/hour report. Once retracted, an archived model cannot create a new contribution. Duplicate add never reactivates an archived entry; only the explicit state command does.

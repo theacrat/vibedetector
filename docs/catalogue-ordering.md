@@ -1,0 +1,15 @@
+# Archive visibility and catalogue ordering
+
+Archived models are admin-only catalogue entries. Public model lists and dashboard model choices contain active models only. Named graph filters for archived models normalise to all models, including direct API requests and old URLs. Retain stored reports for provider-wide aggregation and normal retention; do not delete data or change provider algorithms. Existing browser session ownership may still expose its saved archived name solely to allow category changes/retraction, not historical graph access.
+
+Add Move up/Move down controls to each admin row. Persist a provider-scoped order using existing models.position. Active and archived rows share the admin order, while public lists preserve relative order of active rows. New models append to the provider's list. No migration needed. Authenticated same-origin POST /api/admin/models/order takes {provider,names}, an exact complete permutation of the provider catalogue. Reject duplicate, omitted, unknown or cross-provider names before any write. Apply positions atomically in D1 batch; repeat requests are idempotent. Disable movement at list edges and during requests; keep focus on the moved model control and show errors without optimistic drift.
+
+A transaction-time membership guard rejects a concurrently changed catalogue with 409 and no partial updates. Concurrent complete reorders use last-writer-wins. New-model append computes MAX(position)+1 in the INSERT itself. Archive visibility is evaluated when each request loads its active catalogue; already returned graphs cannot be revoked. All public REST, SSR and server-function catalogue reads must use active-only data, with full catalogue reads restricted to authenticated administration.
+
+Verify archive/reactivate updates public visibility, archived filter URLs/API cannot retrieve named historical graphs, report totals/verdicts remain unchanged, order survives reload and updates selectors, malformed order writes leave data unchanged, and admin authentication/CSRF gates remain intact. Review and run local CI equivalents. No deployment without approval.
+
+The public all-models aggregate still contains archived contributions until expiry. No public catalogue response identifies archived names, and no named archived graph is returned. This is deliberate access reduction, not erasure of historical database rows.
+
+Reordering sends names only, never editable positions. The server validates the complete set and computes contiguous positions itself. The database update rechecks catalogue membership at execution time, so a concurrently added model cannot leave a partially reordered list.
+
+Each provider catalogue is capped at 256 models. The authenticated order endpoint permits a streamed JSON body up to 256 KiB, enough for a full permutation at the existing 120-character name limit. Report/login/other admin bodies retain their 4 KiB bound. New additions enforce the catalogue cap inside the insert statement; adding an existing name remains idempotent.

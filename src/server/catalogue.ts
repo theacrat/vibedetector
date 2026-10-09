@@ -72,4 +72,59 @@ function parseModel(body: unknown): { provider: ProviderId; name: string } {
   return { name: body.name, provider: provider.id };
 }
 
-export { isModelName, loadModels, parseModel };
+async function loadActiveModels(db: D1Database, provider: ProviderId): Promise<ModelOption[]> {
+  const models = await loadModels(db, provider);
+  return models.filter((model) => model.active);
+}
+
+async function orderModels(db: D1Database, body: unknown): Promise<void> {
+  if (
+    !body ||
+    typeof body !== "object" ||
+    !("provider" in body) ||
+    typeof body.provider !== "string" ||
+    !("names" in body) ||
+    !Array.isArray(body.names) ||
+    !body.names.every(isModelName)
+  ) {
+    throw new ApiError(400, "Invalid model order");
+  }
+  const provider = findProvider(body.provider);
+  if (!provider) {
+    throw new ApiError(400, "Invalid provider");
+  }
+  const names: string[] = body.names;
+  if (names.length > 256) {
+    throw new ApiError(400, "Catalogue limit is 256 models per provider");
+  }
+  const encoded = JSON.stringify(names);
+  const models = await loadModels(db, provider.id);
+  const catalogue = new Set(models.map((model) => model.name));
+  if (
+    names.length !== catalogue.size ||
+    new Set(names).size !== names.length ||
+    !names.every((name) => catalogue.has(name))
+  ) {
+    throw new ApiError(400, "Invalid model order");
+  }
+  const [result] = await db.batch([
+    db
+      .prepare(
+        `UPDATE models SET position = (
+          SELECT CAST(key AS INTEGER) FROM json_each(?) WHERE value = models.name
+        ) WHERE provider = ?
+          AND (SELECT COUNT(*) FROM models WHERE provider = ?) = ?
+          AND (SELECT COUNT(*) FROM models WHERE provider = ?
+            AND name IN (SELECT value FROM json_each(?))) = ?`,
+      )
+      .bind(encoded, provider.id, provider.id, names.length, provider.id, encoded, names.length),
+  ]);
+  if (!result?.success) {
+    throw new Error("Catalogue order failed");
+  }
+  if (result.meta.changes !== names.length) {
+    throw new ApiError(409, "Catalogue changed; reload before ordering");
+  }
+}
+
+export { isModelName, loadActiveModels, loadModels, orderModels, parseModel };

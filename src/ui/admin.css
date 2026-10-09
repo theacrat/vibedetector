@@ -75,3 +75,18 @@ form.admin-panel {
   margin-top: 4px;
   color: var(--muted);
 }
+.admin-model-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+@media (max-width: 600px) {
+  .admin-models li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .admin-model-actions {
+    justify-content: flex-start;
+  }
+}
