@@ -214,6 +214,7 @@ function AdminModel({
     <li>
       <span>
         <b>{model.name}</b>
+        <code className="admin-id">{model.id}</code>
         <small>{model.active ? "Active" : "Archived"}</small>
       </span>
       <ModelRename model={model} state={state} />

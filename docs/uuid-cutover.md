@@ -1,10 +1,10 @@
 # UUID catalogue cutover
 
-Replacement database prepared as `vibedetector-uuid-production` (`91932361-4b4a-42d2-a422-fea57689125e`). A fresh protected export was imported and UUID migration applied without modifying the source database. Reconciliation returned 10 providers, 60 models, 2 reports and no foreign-key violations. Worker binding changes are pending final reviewed-head gates and deployment; the original dedicated database remains rollback storage.
+Replacement database `vibedetector-uuid-production` (`91932361-4b4a-42d2-a422-fea57689125e`) was created and populated from a protected read-only export for rehearsal. Migration 0004 was applied there, not to the source database. Reconciliation returned 10 providers, 60 models, 2 reports and no foreign-key violations. Worker binding changes are pending final reviewed-head gates and deployment; the original dedicated database remains rollback storage.
 
 Approved scope is Worker `vibedetector` in account `85cd914334836de8bb8e1f0874e11da8` and its dedicated D1 database `vibedetector-community-production` (`a73bac50-12b3-4bb3-a427-c8207e35dad7`). The older database named `vibedetector` is unrelated and excluded.
 
-1. Complete local schema/UI migration and independent review before remote writes.
+1. Complete schema/UI migration and independent review before production cutover writes. The replacement rehearsal database is not production traffic.
 2. Capture a fresh read-only export of the dedicated production database immediately before cutover. Treat exports as protected temporary data, not PR attachments. Preserve admin key and Turnstile secrets without reading them into chat.
 3. Create a new UUID-catalogue database and import the legacy snapshot. Reconcile source provider model counts/order/active state, then apply the new UUID migration. Existing report identity hashes and UTC windows remain unchanged.
 4. Compare every mapped report/category/timestamp and all provider/model records between source and replacement. Fail on unknown names or slugs rather than dropping rows. Keep the old database unchanged as rollback.

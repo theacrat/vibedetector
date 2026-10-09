@@ -67,7 +67,7 @@ function parseProvider(body: unknown): Omit<Provider, "id" | "active"> {
     !isHttps(body.status) ||
     !("logo" in body) ||
     typeof body.logo !== "string" ||
-    !(localLogos.has(body.logo) || isHttps(body.logo))
+    !(body.logo === "" || localLogos.has(body.logo) || isHttps(body.logo))
   ) {
     throw new ApiError(400, "Invalid provider");
   }

@@ -97,6 +97,12 @@ form.admin-panel {
   margin-top: 4px;
   color: var(--muted);
 }
+.admin-models code {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
 .admin-model-actions {
   display: flex;
   flex-wrap: wrap;
