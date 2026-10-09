@@ -51,7 +51,16 @@ function isCategory(value: unknown): value is Category {
   return categories.some((category) => category === value);
 }
 const providerModels: Record<ProviderId, readonly string[]> = {
-  chatgpt: ["GPT-6.1 Sol", "GPT-6 Sol", "GPT-6 Luna", "GPT-5.6 Sol", "GPT-5.5", "GPT-5.4", "o3"],
+  chatgpt: [
+    "GPT-6 Astra",
+    "GPT-6.1 Sol",
+    "GPT-6 Sol",
+    "GPT-6 Luna",
+    "GPT-5.6 Sol",
+    "GPT-5.6 Terra",
+    "GPT-5.6 Luna",
+    "GPT-5.5",
+  ],
   claude: [
     "Claude Opus 5.5",
     "Claude Sonnet 5.5",
