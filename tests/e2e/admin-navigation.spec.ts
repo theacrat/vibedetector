@@ -154,12 +154,25 @@ test("a successful provider write opens its editor when catalogue refresh fails"
 }) => {
   const id = "10000000-0000-4000-8000-000000000005";
   let created = false;
+  let name = "Refresh failure";
   await page.route("**/api/admin/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (route.request().method() === "POST") {
       created = true;
+      if (path.endsWith("/update")) {
+        const body: unknown = route.request().postDataJSON();
+        if (
+          !body ||
+          typeof body !== "object" ||
+          !("name" in body) ||
+          typeof body.name !== "string"
+        ) {
+          throw new Error("Expected saved provider name.");
+        }
+        ({ name } = body);
+      }
       await route.fulfill({
-        json: [{ ...adminProviders[0], id, name: "Refresh failure", slug: "refresh-failure" }],
+        json: [{ ...adminProviders[0], id, name, slug: "refresh-failure" }],
       });
       return;
     }
@@ -179,6 +192,20 @@ test("a successful provider write opens its editor when catalogue refresh fails"
   await expect(page).toHaveURL(`/admin/providers/${id}`);
   await expect(page.getByRole("heading", { name: "Edit Refresh failure" })).toBeFocused();
   await expect(page.getByRole("alert")).toHaveText("Provider saved but catalogue refresh failed.");
+  await page.getByLabel("Provider name").fill("Edited refresh failure");
+  await page.getByRole("button", { name: "Save provider" }).click();
+  await expect(page.getByRole("heading", { name: "Edit Edited refresh failure" })).toBeVisible();
+  await expect(page.getByLabel("Provider name")).toHaveValue("Edited refresh failure");
+  await page.reload();
+  await expect(page.getByLabel("Administrator key")).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveText("Refresh unavailable.");
+  await expect(page.getByLabel("Provider name")).toHaveCount(0);
+  await page.goBack();
+  await expect(page.getByLabel("Provider name")).toHaveCount(0);
+  await page.goForward();
+  await expect(page).toHaveURL(`/admin/providers/${id}`);
+  await expect(page.getByRole("alert")).toHaveText("Refresh unavailable.");
+  await expect(page.getByLabel("Provider name")).toHaveCount(0);
 });
 
 test("authentication preserves the requested edit route", async ({ page }) => {

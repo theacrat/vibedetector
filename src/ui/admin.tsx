@@ -24,6 +24,15 @@ function ModelAdmin({ screen = listScreen }: { screen?: AdminScreen }) {
   const savedProvider =
     screen.kind === "edit" && saved?.id === screen.providerId ? saved : undefined;
   const state = useAdmin(savedProvider);
+  useEffect(() => {
+    if (savedProvider) {
+      globalThis.history.replaceState(
+        { ...globalThis.history.state, savedProvider: undefined },
+        "",
+        location.href,
+      );
+    }
+  }, [location.href, savedProvider]);
   const heading = useRef<HTMLHeadingElement>(null);
   const authenticated = state.models !== undefined;
   const provider =
