@@ -9,3 +9,5 @@ A transaction-time membership guard rejects a concurrently changed catalogue wit
 Verify archive/reactivate updates public visibility, archived filter URLs/API cannot retrieve named historical graphs, report totals/verdicts remain unchanged, order survives reload and updates selectors, malformed order writes leave data unchanged, and admin authentication/CSRF gates remain intact. Review and run local CI equivalents. No deployment without approval.
 
 Reordering sends names only, never editable positions. The server validates the complete set and computes contiguous positions itself. The database update rechecks catalogue membership at execution time, so a concurrently added model cannot leave a partially reordered list.
+
+Each provider catalogue is capped at 256 models. The authenticated order endpoint permits a streamed JSON body up to 256 KiB, enough for a full permutation at the existing 120-character name limit. Report/login/other admin bodies retain their 4 KiB bound. New additions enforce the catalogue cap inside the insert statement; adding an existing name remains idempotent.
