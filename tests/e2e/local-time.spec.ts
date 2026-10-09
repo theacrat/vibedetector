@@ -30,8 +30,9 @@ test("chart times follow the device timezone without hydration errors", async ({
       hour: "2-digit",
       minute: "2-digit",
       timeZone: "Pacific/Honolulu",
-    }).format(latest.t);
-    await expect(page.locator(".now")).toContainText(`since ${expected}`);
+    }).format(latest.t - 24 * 3_600_000);
+    await expect(page.locator(".chart .axis").filter({ hasText: expected })).toHaveCount(1);
+    await expect(page.locator(".now")).toHaveCount(0);
     await expect(page.locator(".chart-note")).toContainText("local timezone");
     expect(errors).toEqual([]);
     await expect(page.locator(".mono-tile img")).toHaveAttribute("src", "/logos/claude.svg");

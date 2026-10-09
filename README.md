@@ -17,6 +17,14 @@ Open http://127.0.0.1:41873. Localhost uses Cloudflare's Turnstile test keys. Th
 
 Reports contribute once per AI per fixed UTC hour. Category changes and undo apply to the active hour only. Earlier reports remain in historical charts until retention removes them.
 
+Model reporting is optional. The database catalogue supplies available models; `seeds/models.ts` preserves the initial list only. A model is metadata on the existing provider-level report, not a separate vote. Graph filters do not alter provider verdicts or baselines. Apply all local migrations after updating; model migrations preserve existing reports and expand provider support to Z.AI and Kimi. Production migrations still require approval.
+
+## Model administration
+
+Open `/admin` to add models or archive/reactivate them. Names cannot be renamed or deleted, preserving historical report filters. Set `ADMIN_KEY` as a Worker secret with at least 32 randomly generated characters, not a memorable password. Never put it in Wrangler vars or commit it. The panel is disabled if the secret or admin rate limiter is missing.
+
+For local development, use an ignored `.dev.vars` file containing a test-only `ADMIN_KEY`. Production uses Wrangler's protected secret input. Key entry exchanges the key for a one-hour HttpOnly session; the panel never stores it in localStorage or URL parameters. Rotate the key to revoke existing sessions. The initial migration uses INSERT OR IGNORE; deployments do not reset your catalogue edits.
+
 ## Gates
 
 ```sh

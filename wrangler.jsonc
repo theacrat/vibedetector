@@ -17,6 +17,11 @@
   ],
   "ratelimits": [
     {
+      "name": "ADMIN_RATE_LIMIT",
+      "namespace_id": "874164",
+      "simple": { "limit": 5, "period": 60 },
+    },
+    {
       "name": "REPORT_RATE_LIMIT",
       "namespace_id": "874163",
       "simple": { "limit": 10, "period": 60 },

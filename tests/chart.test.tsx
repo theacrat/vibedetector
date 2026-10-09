@@ -16,6 +16,8 @@ const empty: Dashboard = {
     { broken: 0, nerfed: 0, slow: 0, t: 1_800_000 },
   ],
   hourly: 0,
+  model: "",
+  models: [{ active: true, name: "Claude Opus 5.5", provider: "chatgpt" }],
   provider: providers[0],
   range: "24h",
   verdict: "insufficient community data",
@@ -23,6 +25,9 @@ const empty: Dashboard = {
 
 function recordRange(range: string) {
   expect(["6h", "24h", "7d"]).toContain(range);
+}
+function recordModel(model: string) {
+  expect(typeof model).toBe("string");
 }
 
 const dashboard: Dashboard = {
@@ -34,11 +39,12 @@ const dashboard: Dashboard = {
   ],
   hourly: 8,
 };
+const filtered = { ...dashboard, model: "Claude Opus 5.5" };
 
 describe("community reports chart", () => {
   it("renders empty activity without inventing a category or baseline", () => {
     const html = renderToStaticMarkup(
-      <Chart dashboard={empty} onRange={recordRange} pending={false} />,
+      <Chart dashboard={empty} onRange={recordRange} onModel={recordModel} pending={false} />,
     );
     expect(html).toContain("No community reports yet");
     expect(html).toContain("How much data is enough?");
@@ -47,19 +53,33 @@ describe("community reports chart", () => {
     expect(html).toContain("Most reported</span><b>—</b>");
     expect(html).not.toContain('class="baseline"');
     expect(html).not.toContain("NaN");
-    expect(html).toContain("since 00:30");
+    expect(html).not.toContain("since ");
+    expect(html).not.toContain('class="live"');
+    expect(html).toContain('aria-label="Filter reports by model"');
     expect(html.indexOf(">6h</button>")).toBeLessThan(html.indexOf(">24h</button>"));
     expect(html.indexOf(">24h</button>")).toBeLessThan(html.indexOf(">7d</button>"));
   });
 
   it("renders the supplied category totals and peak", () => {
     const html = renderToStaticMarkup(
-      <Chart dashboard={dashboard} onRange={recordRange} pending />,
+      <Chart dashboard={dashboard} onRange={recordRange} onModel={recordModel} pending />,
     );
     expect(html).toContain("Peak 8. Most reported slow.");
     expect(html).toContain("2.0×");
     expect(html).toContain('class="baseline"');
     expect(html).toContain("disabled");
+  });
+
+  it("keeps filtered graph statistics separate from provider baseline", () => {
+    const html = renderToStaticMarkup(
+      <Chart dashboard={filtered} onRange={recordRange} onModel={recordModel} pending={false} />,
+    );
+    expect(html).toContain("Peak 8. Most reported slow.");
+    expect(html).not.toContain('class="baseline"');
+    expect(html).not.toContain("2.0×");
+    expect(html).not.toContain("vs. normal");
+    expect(html).toContain("Filtered reports; provider verdict uses all models.");
+    expect(html).toContain('<option value="Claude Opus 5.5" selected="">');
   });
 
   it("uses UTC labels regardless of local timezone", () => {

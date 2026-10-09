@@ -2,6 +2,8 @@ declare global {
   namespace Cloudflare {
     interface Env {
       TURNSTILE_SECRET_KEY?: string;
+      ADMIN_KEY?: string;
+      ADMIN_RATE_LIMIT?: RateLimit;
     }
   }
 }

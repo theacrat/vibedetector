@@ -1,9 +1,22 @@
+import { initialModels } from "@seed/models";
 import { describe, expect, it } from "vitest";
 
 import { findProvider, isCategory, isRange, providers, ranges } from "@/domain";
 
 describe("provider registry", () => {
-  it("has eight distinct, shareable provider paths", () => {
+  it("preserves unique initial model seeds for every provider", () => {
+    expect(Object.keys(initialModels).toSorted()).toEqual(
+      providers.map((provider) => provider.id).toSorted(),
+    );
+    for (const provider of providers) {
+      expect(initialModels[provider.id].length).toBeGreaterThan(0);
+      expect(new Set(initialModels[provider.id]).size).toBe(initialModels[provider.id].length);
+    }
+    expect(initialModels.chatgpt).toContain("GPT-6 Astra");
+    expect(initialModels.chatgpt).toContain("GPT-5.6 Terra");
+    expect(initialModels.chatgpt).toContain("GPT-5.6 Luna");
+  });
+  it("has ten distinct, shareable provider paths", () => {
     expect(providers.map((provider) => provider.id)).toEqual([
       "claude",
       "chatgpt",
@@ -13,8 +26,10 @@ describe("provider registry", () => {
       "mistral",
       "deepseek",
       "cursor",
+      "zai",
+      "kimi",
     ]);
-    expect(new Set(providers.map((provider) => provider.id)).size).toBe(8);
+    expect(new Set(providers.map((provider) => provider.id)).size).toBe(10);
     expect(findProvider("unknown")).toBeUndefined();
   });
 

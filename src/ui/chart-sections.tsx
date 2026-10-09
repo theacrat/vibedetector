@@ -6,6 +6,7 @@ import { timeLabel } from "./chart-label";
 import { colors, categoryStyles } from "./chart-model";
 import type { ChartModel } from "./chart-model";
 import { useDeviceTimeZone } from "./device-time";
+import { ModelSelect } from "./model-select";
 
 function textAnchor(tick: number) {
   if (tick === 0) {
@@ -18,32 +19,25 @@ function textAnchor(tick: number) {
 }
 
 function ChartHead({ model }: { model: ChartModel }) {
-  const { last, range, handleRangeActions, pending } = model;
-  const timeZone = useDeviceTimeZone();
-  const since = model.buckets.at(-1)?.t ?? model.asOf;
+  const { range, handleRangeActions, pending, filter, models, onModel } = model;
   return (
     <div className="chart-head">
-      <div>
-        <h3>Reports</h3>
-        <p className="now">
-          <span className="live" aria-hidden="true" />
-          <b>{last.toLocaleString("en-GB")}</b>
-          {" since "}
-          {timeLabel(since, "24h", timeZone)}
-        </p>
+      <h3>Reports</h3>
+      <div className="chart-controls">
+        <ModelSelect options={models} value={filter} onChange={onModel} disabled={pending} filter />
+        <fieldset className="ranges" aria-label="Time range">
+          {(["6h", "24h", "7d"] as const).map((value) => (
+            <Button
+              key={value}
+              aria-pressed={range === value}
+              isDisabled={pending}
+              onPress={handleRangeActions[value]}
+            >
+              {value}
+            </Button>
+          ))}
+        </fieldset>
       </div>
-      <fieldset className="ranges" aria-label="Time range">
-        {(["6h", "24h", "7d"] as const).map((value) => (
-          <Button
-            key={value}
-            aria-pressed={range === value}
-            isDisabled={pending}
-            onPress={handleRangeActions[value]}
-          >
-            {value}
-          </Button>
-        ))}
-      </fieldset>
     </div>
   );
 }
@@ -207,10 +201,12 @@ function ChartStats({ model }: { model: ChartModel }) {
         <span>Peak</span>
         <b>{peak.toLocaleString("en-GB")}</b>
       </div>
-      <div>
-        <span>vs. normal</span>
-        <b>{ratio === undefined ? "—" : `${ratio.toFixed(1)}×`}</b>
-      </div>
+      {!model.filter && (
+        <div>
+          <span>vs. normal</span>
+          <b>{ratio === undefined ? "—" : `${ratio.toFixed(1)}×`}</b>
+        </div>
+      )}
     </div>
   );
 }

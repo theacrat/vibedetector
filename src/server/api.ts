@@ -1,10 +1,12 @@
 import { findProvider, isCategory, isRange } from "@/domain";
 import type { Category, ProviderId } from "@/domain";
 
+import { handleAdmin } from "./admin";
+import { isModelName, loadModels } from "./catalogue";
 import { dashboardFromDatabase, overviewFromDatabase } from "./queries";
 import { ApiError, browserIdentity, challengeConfig, readJson, verifyChallenge } from "./security";
 import type { VerifyFetch } from "./security";
-import { HOUR, saveReport, sessionCategory } from "./storage";
+import { HOUR, saveReport, sessionReport } from "./storage";
 
 function json(value: unknown, status = 200, cookie?: string | null): Response {
   const headers = new Headers({ "Cache-Control": "no-store" });
@@ -14,12 +16,18 @@ function json(value: unknown, status = 200, cookie?: string | null): Response {
   return Response.json(value, { headers, status });
 }
 
-function parseReport(body: unknown): { category: Category | null; token: string; window: number } {
+function parseReport(body: unknown): {
+  category: Category | null;
+  model: string | null;
+  token: string;
+  window: number;
+} {
   if (
     !body ||
     typeof body !== "object" ||
     !("category" in body) ||
     (body.category !== null && !isCategory(body.category)) ||
+    ("model" in body && body.model !== null && !isModelName(body.model)) ||
     !("token" in body) ||
     typeof body.token !== "string" ||
     !body.token ||
@@ -30,7 +38,14 @@ function parseReport(body: unknown): { category: Category | null; token: string;
   ) {
     throw new ApiError(400, "Invalid report");
   }
-  return { category: body.category, token: body.token, window: body.window };
+  return {
+    category: body.category,
+    // The API uses null for unspecified model metadata.
+    // oxlint-disable-next-line unicorn/no-null
+    model: "model" in body && typeof body.model === "string" ? body.model : null,
+    token: body.token,
+    window: body.window,
+  };
 }
 
 async function mutateReport(
@@ -61,28 +76,49 @@ async function mutateReport(
   if (body.window !== Math.floor(now / HOUR)) {
     throw new ApiError(409, "Reporting window expired");
   }
-  const category = await saveReport(bindings.DB, provider, identity.hash, body.category, now);
-  return json({ category }, 200, identity.cookie);
+  const category = await saveReport(
+    bindings.DB,
+    provider,
+    identity.hash,
+    body.category,
+    now,
+    body.model,
+  );
+  return json({ category, model: body.model }, 200, identity.cookie);
 }
 
-async function overview(bindings: Cloudflare.Env, now: number): Promise<Response> {
-  return json(await overviewFromDatabase(bindings.DB, now));
+async function session(
+  request: Request,
+  bindings: Cloudflare.Env,
+  provider: ProviderId,
+  now: number,
+): Promise<Response> {
+  const config = challengeConfig(bindings, new URL(request.url).hostname);
+  const identity = await browserIdentity(request);
+  const report = await sessionReport(bindings.DB, provider, identity.hash, now);
+  const models = await loadModels(bindings.DB, provider);
+  return json(
+    {
+      ...report,
+      models: models.filter((entry) => entry.active),
+      siteKey: config.siteKey,
+      window: Math.floor(now / HOUR),
+    },
+    200,
+    identity.cookie,
+  );
 }
 
-async function routeApi(
+async function providerApi(
   request: Request,
   bindings: Cloudflare.Env,
   verifyFetch: VerifyFetch,
+  url: URL,
+  now: number,
 ): Promise<Response> {
-  const url = new URL(request.url);
-  const now = Date.now();
-  if (url.pathname === "/api/overview") {
-    if (request.method !== "GET") {
-      throw new ApiError(405, "Method not allowed");
-    }
-    return overview(bindings, now);
-  }
-  const match = /^\/api\/(?<route>providers|session|reports)\/(?<id>[^/]+)$/u.exec(url.pathname);
+  const match = /^\/api\/(?<route>providers|session|reports|models)\/(?<id>[^/]+)$/u.exec(
+    url.pathname,
+  );
   if (!match?.groups) {
     throw new ApiError(404, "Not found");
   }
@@ -99,19 +135,41 @@ async function routeApi(
     if (!isRange(range)) {
       throw new ApiError(400, "Invalid range");
     }
-    return json(await dashboardFromDatabase(bindings.DB, provider.id, range, now));
+    const model = url.searchParams.get("model") ?? "";
+    return json(await dashboardFromDatabase(bindings.DB, provider.id, range, now, model));
   }
-  const config = challengeConfig(bindings, url.hostname);
+  if (route === "models") {
+    return json(await loadModels(bindings.DB, provider.id));
+  }
   if (route === "session") {
-    const identity = await browserIdentity(request);
-    const category = await sessionCategory(bindings.DB, provider.id, identity.hash, now);
-    return json(
-      { category, siteKey: config.siteKey, window: Math.floor(now / HOUR) },
-      200,
-      identity.cookie,
-    );
+    return session(request, bindings, provider.id, now);
   }
-  return mutateReport(request, bindings, provider.id, config, verifyFetch);
+  return mutateReport(
+    request,
+    bindings,
+    provider.id,
+    challengeConfig(bindings, url.hostname),
+    verifyFetch,
+  );
+}
+
+async function routeApi(
+  request: Request,
+  bindings: Cloudflare.Env,
+  verifyFetch: VerifyFetch,
+): Promise<Response> {
+  const url = new URL(request.url);
+  const now = Date.now();
+  if (url.pathname === "/api/admin" || url.pathname.startsWith("/api/admin/")) {
+    return handleAdmin(request, bindings);
+  }
+  if (url.pathname === "/api/overview") {
+    if (request.method !== "GET") {
+      throw new ApiError(405, "Method not allowed");
+    }
+    return json(await overviewFromDatabase(bindings.DB, now));
+  }
+  return providerApi(request, bindings, verifyFetch, url, now);
 }
 
 export async function handleApi(

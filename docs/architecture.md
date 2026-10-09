@@ -3,10 +3,15 @@
 ## Product
 
 Community reports of AI quality, latency and availability, not official outage declarations. Follow the supplied prototype's charcoal palette, typefaces, raised purple/amber/red buttons and chart layout. `/` lists eight providers with separate `/claude`, `/chatgpt`, `/gemini`, `/copilot`, `/grok`, `/mistral`, `/deepseek` and `/cursor` pages. Never fabricate activity.
+Optional model reporting adds `/zai` and `/kimi`; their reports use the same provider-level algorithms. `docs/model-reporting.md` defines model metadata and graph-filter boundaries.
 
 ## Domain
 
 `Provider` is a registry entry with slug, name, maker and official status URL. `Category` is `nerfed | slow | broken`. Reports have a provider, category, timestamp and anonymous browser identity. An opaque random HttpOnly cookie identifies a browser. One report per provider per browser per fixed hour. Retrying is idempotent, switching updates and undo removes. IP addresses are not stored in reports.
+
+Reports may include a provider-scoped model label as nullable metadata. Model selection does not create an additional contribution, change the deduplication window, or change provider verdict algorithms. Graph filters affect displayed category buckets only; provider totals and baselines remain unfiltered.
+
+Model options are managed in D1. Initial edited lists are migration seeds only. The key-protected admin panel archives/reactivates immutable names so historical reports remain filterable. `docs/model-admin.md` defines authentication and catalogue boundaries.
 
 `Dashboard` contains UTC-aligned buckets, hourly count, baseline and verdict. Ranges are 6h (15-minute buckets), 24h (30-minute buckets) and 7d (3-hour buckets). Insufficient history or volume means insufficient data, never good vibes.
 

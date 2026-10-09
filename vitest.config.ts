@@ -1,7 +1,12 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  resolve: { alias: { "@": new URL("src", import.meta.url).pathname } },
+  resolve: {
+    alias: {
+      "@": new URL("src", import.meta.url).pathname,
+      "@seed": new URL("seeds", import.meta.url).pathname,
+    },
+  },
   test: {
     environment: "node",
     exclude: ["tests/backend.test.ts"],

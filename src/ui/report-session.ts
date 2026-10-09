@@ -1,19 +1,23 @@
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState, useCallback } from "react";
 
-import type { Category, ProviderId } from "@/domain";
+import type { Category, ModelOption, ProviderId } from "@/domain";
 
+import { parseCatalogue } from "./catalogue-data";
 import { requestJson, RequestError } from "./data";
 import { reportingWindowDelay } from "./report-window";
 import { loadTurnstile, mountWidget } from "./turnstile";
 
 interface Session {
+  models: ModelOption[];
   category: Category | null;
+  model: string | null;
   siteKey: string;
   window: number;
 }
 interface Intent {
   category: Category | null;
+  model: string | null;
   session: Session;
 }
 type Phase = "verifying" | "submitting" | "error";
@@ -24,7 +28,9 @@ async function readSession(id: ProviderId, signal?: AbortSignal) {
   if (!Number.isFinite(session.window)) {
     throw new TypeError("Could not load the reporting window. Please try again.");
   }
-  return session;
+  // Older session responses omit optional model metadata.
+  // oxlint-disable-next-line unicorn/no-null
+  return { ...session, model: session.model ?? null, models: parseCatalogue(session.models ?? []) };
 }
 
 function useReportState() {
@@ -32,6 +38,9 @@ function useReportState() {
   // oxlint-disable-next-line unicorn/no-null
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const [session, setSession] = useState<Session>();
+  // JSON null represents an unspecified report model.
+  // oxlint-disable-next-line unicorn/no-null
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [intent, setIntent] = useState<Intent>();
   const [phase, setPhase] = useState<Phase>("verifying");
   const [reportError, setReportError] = useState("");
@@ -43,18 +52,20 @@ function useReportState() {
     pending: intent !== undefined,
     phase,
     reportError,
+    selectedModel,
     session,
     setContainer,
     setFeedback,
     setIntent,
     setPhase,
     setReportError,
+    setSelectedModel,
     setSession,
   };
 }
 
 function useInitialSession(id: ProviderId, state: ReportState) {
-  const { setSession, setReportError } = state;
+  const { setSession, setSelectedModel, setReportError } = state;
   useEffect(() => {
     const controller = new AbortController();
     async function initialize() {
@@ -62,6 +73,7 @@ function useInitialSession(id: ProviderId, state: ReportState) {
         const next = await readSession(id, controller.signal);
         if (!controller.signal.aborted) {
           setSession(next);
+          setSelectedModel(next.model);
         }
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -73,7 +85,7 @@ function useInitialSession(id: ProviderId, state: ReportState) {
     return () => {
       controller.abort();
     };
-  }, [id, setSession, setReportError]);
+  }, [id, setSession, setSelectedModel, setReportError]);
 }
 
 function useReportWindow(id: ProviderId, state: ReportState) {
@@ -98,12 +110,10 @@ function useReportWindow(id: ProviderId, state: ReportState) {
       return;
     }
     const controller = new AbortController();
-    const timer = globalThis.setTimeout(
-      () => {
-        void refreshWindow(controller.signal);
-      },
-      reportingWindowDelay(session.window, Date.now()),
-    );
+    const delay = Math.min(60_000, reportingWindowDelay(session.window, Date.now()));
+    const timer = globalThis.setTimeout(() => {
+      void refreshWindow(controller.signal);
+    }, delay);
     return () => {
       globalThis.clearTimeout(timer);
       controller.abort();
@@ -158,20 +168,25 @@ function useVerification(
       submitted = true;
       setPhase("submitting");
       try {
-        const result = await requestJson<{ category: Category | null }>(`/api/reports/${id}`, {
-          body: JSON.stringify({
-            category: staged.category,
-            token,
-            window: staged.session.window,
-          }),
-          headers: { "Content-Type": "application/json" },
-          method: "POST",
-          signal: controller.signal,
-        });
+        const result = await requestJson<{ category: Category | null; model?: string | null }>(
+          `/api/reports/${id}`,
+          {
+            body: JSON.stringify({
+              category: staged.category,
+              ...(staged.model ? { model: staged.model } : {}),
+              token,
+              window: staged.session.window,
+            }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST",
+            signal: controller.signal,
+          },
+        );
         if (controller.signal.aborted) {
           return;
         }
-        setSession({ ...staged.session, category: result.category });
+        // oxlint-disable-next-line unicorn/no-null
+        setSession({ ...staged.session, category: result.category, model: result.model ?? null });
         setFeedback(
           result.category === null
             ? "Report removed."
@@ -251,7 +266,8 @@ function useVerification(
 
 function useReportMutation(id: ProviderId, state: ReportState) {
   const control = useRef<AbortController | undefined>(undefined);
-  const { intent, session, setIntent, setPhase, setFeedback, setReportError } = state;
+  const { intent, session, selectedModel, setIntent, setPhase, setFeedback, setReportError } =
+    state;
   const cancel = useCallback(() => {
     control.current?.abort();
     setIntent(undefined);
@@ -262,14 +278,29 @@ function useReportMutation(id: ProviderId, state: ReportState) {
       if (!session || intent) {
         return;
       }
+      const retracting = session.category === category && session.model === selectedModel;
+      const retainingSavedModel = session.category !== null && session.model === selectedModel;
+      if (
+        !retainingSavedModel &&
+        selectedModel &&
+        !session.models.some((model) => model.name === selectedModel && model.active)
+      ) {
+        setReportError("This model is archived. Choose an active model for a new report.");
+        return;
+      }
       setReportError("");
       setFeedback("");
       setPhase("verifying");
       // JSON null is the API's explicit retraction command.
-      // oxlint-disable-next-line unicorn/no-null
-      setIntent({ category: session.category === category ? null : category, session });
+      setIntent({
+        category:
+          // oxlint-disable-next-line unicorn/no-null
+          retracting ? null : category,
+        model: selectedModel,
+        session,
+      });
     },
-    [session, intent, setReportError, setFeedback, setPhase, setIntent],
+    [session, intent, selectedModel, setReportError, setFeedback, setPhase, setIntent],
   );
   const retry = useCallback(() => {
     control.current?.abort();

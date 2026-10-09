@@ -9,15 +9,25 @@ const loadOverview = createServerFn({ method: "GET" }).handler(async () => {
 });
 
 const loadDashboard = createServerFn({ method: "GET" })
-  .validator((input: { id: ProviderId; range: Range }) => {
-    if (!findProvider(input.id) || !isRange(input.range)) {
-      throw new Error("Invalid provider or range.");
+  .validator((input: { id: ProviderId; range: Range; model: string }) => {
+    if (
+      !findProvider(input.id) ||
+      !isRange(input.range) ||
+      typeof input.model !== "string" ||
+      input.model.length > 120
+    ) {
+      throw new Error("Invalid provider, range or model.");
     }
     return input;
   })
   .handler(async ({ data }) => {
-    const { readDashboard } = await import("@/server/reports");
-    return readDashboard(data.id, data.range);
+    const { readDashboard, readModels } = await import("@/server/reports");
+    const models = await readModels(data.id);
+    const model =
+      data.model === "unspecified" || models.some((entry) => entry.name === data.model)
+        ? data.model
+        : "";
+    return readDashboard(data.id, data.range, model);
   });
 
 class RequestError extends Error {

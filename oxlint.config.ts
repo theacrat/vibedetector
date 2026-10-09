@@ -39,7 +39,7 @@ export default defineConfig({
       },
     },
     {
-      files: ["src/**/*"],
+      files: ["src/**/*", "seeds/**/*"],
       rules: {
         "import/no-default-export": "error",
         "import/prefer-default-export": "off",

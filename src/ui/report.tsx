@@ -1,10 +1,11 @@
 import { Funnel, Hourglass, Zap } from "lucide-react";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
 
 import { categories } from "@/domain";
 import type { Category, ProviderId } from "@/domain";
 
+import { ModelSelect } from "./model-select";
 import { useReportState, useReportWindow, useReportMutation } from "./report-session";
 import type { ReportState } from "./report-session";
 
@@ -107,11 +108,31 @@ function ReportDialog({
 }
 /* oxlint-enable react/forbid-component-props */
 
+function reportSelectionHint(state: ReportState) {
+  if (!state.session?.category) {
+    return "Choose how your AI feels.";
+  }
+  return state.session.model === state.selectedModel
+    ? "Your report is selected. Tap again to undo."
+    : "Choose a category to save the new model to your report.";
+}
+
+// oxlint-disable-next-line eslint/max-lines-per-function
 function Report({ id }: { id: ProviderId }) {
   const state = useReportState();
   useReportWindow(id, state);
   const { stage, retry, cancel } = useReportMutation(id, state);
-  const { session, pending, phase, feedback, reportError, intent } = state;
+  const { session, pending, phase, feedback, reportError, intent, setSelectedModel, setFeedback } =
+    state;
+  const selectModel = useCallback(
+    (value: string) => {
+      // An empty selection is the API's unspecified model.
+      // oxlint-disable-next-line unicorn/no-null
+      setSelectedModel(value || null);
+      setFeedback("");
+    },
+    [setSelectedModel, setFeedback],
+  );
   const pendingMessage =
     phase === "submitting" ? "Saving your report..." : "Verifying your report...";
   const reportActions = useCallback(
@@ -120,18 +141,31 @@ function Report({ id }: { id: ProviderId }) {
     },
     [stage],
   );
+  const options = useMemo(() => {
+    const models = [...(session?.models ?? [])];
+    for (const name of [session?.model, state.selectedModel]) {
+      if (name && !models.some((model) => model.name === name)) {
+        models.push({ active: false, name, provider: id });
+      }
+    }
+    return models;
+  }, [session, id, state.selectedModel]);
 
   return (
     <section className="report" aria-labelledby="feels">
-      <h2 id="feels">My AI feels...</h2>
+      <h2 id="feels">
+        {"My "}
+        <ModelSelect
+          options={options}
+          value={state.selectedModel ?? ""}
+          onChange={selectModel}
+          disabled={pending || !session}
+        />
+        {" feels..."}
+      </h2>
       <ReportButtons state={state} reportActions={reportActions} />
       <output className="hint">
-        {pending
-          ? pendingMessage
-          : feedback ||
-            (session?.category
-              ? "Your report is selected. Tap again to undo."
-              : "Choose how your AI feels.")}
+        {pending ? pendingMessage : feedback || reportSelectionHint(state)}
       </output>
       {reportError && !intent && (
         <div className="error" role="alert">

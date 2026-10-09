@@ -9,6 +9,8 @@ const providers = [
   { id: "mistral", maker: "Mistral AI", name: "Mistral", status: "https://status.mistral.ai" },
   { id: "deepseek", maker: "DeepSeek", name: "DeepSeek", status: "https://status.deepseek.com" },
   { id: "cursor", maker: "Anysphere", name: "Cursor", status: "https://status.cursor.com" },
+  { id: "zai", maker: "Z.AI", name: "Z.AI", status: "https://z.ai", statusLabel: "Z.AI website" },
+  { id: "kimi", maker: "Moonshot AI", name: "Kimi", status: "https://status.moonshot.cn" },
 ] as const;
 type Provider = (typeof providers)[number];
 type ProviderId = Provider["id"];
@@ -25,6 +27,8 @@ interface Bucket {
   broken: number;
 }
 interface Dashboard {
+  models: ModelOption[];
+  model: string;
   provider: Provider;
   range: Range;
   buckets: Bucket[];
@@ -32,6 +36,11 @@ interface Dashboard {
   baseline: number | null;
   verdict: "insufficient community data" | "no report spike" | "vibes are off" | "killed the vibe";
   asOf: number;
+}
+interface ModelOption {
+  provider: ProviderId;
+  name: string;
+  active: boolean;
 }
 interface Overview {
   provider: Provider;
@@ -48,4 +57,4 @@ function isCategory(value: unknown): value is Category {
   return categories.some((category) => category === value);
 }
 export { categories, providers, ranges, findProvider, isRange, isCategory };
-export type { Category, Provider, ProviderId, Range, Bucket, Dashboard, Overview };
+export type { Category, Provider, ProviderId, Range, Bucket, Dashboard, Overview, ModelOption };
