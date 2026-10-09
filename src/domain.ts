@@ -27,6 +27,7 @@ interface Bucket {
   broken: number;
 }
 interface Dashboard {
+  models: ModelOption[];
   model: string;
   provider: Provider;
   range: Range;
@@ -35,6 +36,11 @@ interface Dashboard {
   baseline: number | null;
   verdict: "insufficient community data" | "no report spike" | "vibes are off" | "killed the vibe";
   asOf: number;
+}
+interface ModelOption {
+  provider: ProviderId;
+  name: string;
+  active: boolean;
 }
 interface Overview {
   provider: Provider;
@@ -122,4 +128,4 @@ export {
   isProviderModel,
   isModelFilter,
 };
-export type { Category, Provider, ProviderId, Range, Bucket, Dashboard, Overview };
+export type { Category, Provider, ProviderId, Range, Bucket, Dashboard, Overview, ModelOption };
