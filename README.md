@@ -1,5 +1,7 @@
 # vibedetector
 
+The provider/model UUID rework is specified in `docs/catalogue-identities.md`. Providers and models have stable IDs separate from editable display names; provider slugs remain URL identifiers. Existing catalogue documentation below is superseded where it describes immutable names or compile-time providers.
+
 Community reports for AI services, built for vibedetector.net. The supplied prototype defines the visual layout. Reports are not official status or evidence of a model change.
 
 ## Local development
