@@ -167,13 +167,10 @@ function ProviderAdmin({ state }: { state: AdminState }) {
     <section className="admin-panel" aria-labelledby="providers-title">
       <h2 id="providers-title">Provider catalogue</h2>
       <p>
-        Archive providers to hide their pages and stop reports. Restore the provider before its
-        models can accept reports again. History is retained.
+        Provider ID is stable. Display names can change without changing reports. Changing the slug
+        changes the public URL.
       </p>
-      <details>
-        <summary>Add a provider</summary>
-        <ProviderForm state={state} />
-      </details>
+      <ProviderForm state={state} />
       <ul className="admin-providers">
         {state.providers.map((provider, index) => (
           <ProviderRow provider={provider} index={index} state={state} key={provider.id} />
@@ -183,4 +180,4 @@ function ProviderAdmin({ state }: { state: AdminState }) {
   );
 }
 
-export { ProviderAdmin };
+export { ProviderAdmin, ProviderForm, ProviderRow };

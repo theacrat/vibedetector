@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, SubmitEvent } from "react";
 
-import type { ModelOption } from "@/domain";
+import type { ModelOption, Provider } from "@/domain";
 
 import { useAdmin } from "./admin-data";
 import type { AdminState } from "./admin-data";
-import { ProviderAdmin } from "./provider-admin";
+import { AdminScreens } from "./admin-screens";
 
 import "./admin.css";
 
@@ -91,12 +91,18 @@ function AdminLogin({ state }: { state: AdminState }) {
 }
 
 // oxlint-disable-next-line eslint/max-lines-per-function
-function AdminCatalogue({ state }: { state: AdminState }) {
+function AdminCatalogue({
+  state,
+  selectedProvider,
+}: {
+  state: AdminState;
+  selectedProvider: Provider;
+}) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     heading.current?.focus();
   }, []);
-  const [provider, setProvider] = useState<string>(state.providers[0]?.id ?? "");
+  const provider = selectedProvider.id;
   const [name, setName] = useState("");
   const submit = useCallback(
     (event: SubmitEvent<HTMLFormElement>) => {
@@ -105,9 +111,6 @@ function AdminCatalogue({ state }: { state: AdminState }) {
     },
     [name, provider, state],
   );
-  const changeProvider = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
-    setProvider(event.currentTarget.value);
-  }, []);
   const changeName = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     setName(event.currentTarget.value);
   }, []);
@@ -129,20 +132,6 @@ function AdminCatalogue({ state }: { state: AdminState }) {
         </button>
       </div>
       <form onSubmit={submit}>
-        <label htmlFor="admin-provider">Provider</label>
-        <select
-          id="admin-provider"
-          value={provider}
-          disabled={state.pending}
-          onChange={changeProvider}
-        >
-          {state.providers.map((entry) => (
-            <option key={entry.id} value={entry.id}>
-              {entry.name}
-              {!entry.active && " (archived)"}
-            </option>
-          ))}
-        </select>
         <label htmlFor="admin-model">Model name</label>
         <input
           id="admin-model"
@@ -263,7 +252,7 @@ function AdminModel({
   );
 }
 
-function ModelAdmin() {
+function ModelAdmin({ providerId }: { providerId?: string }) {
   const state = useAdmin();
   return (
     <main className="wrap admin" id="main">
@@ -275,16 +264,9 @@ function ModelAdmin() {
         </p>
       )}
       {state.pending && <output>Loading catalogue...</output>}
-      {state.models ? (
-        <>
-          <ProviderAdmin state={state} />
-          <AdminCatalogue state={state} />
-        </>
-      ) : (
-        <AdminLogin state={state} />
-      )}
+      <AdminScreens state={state} providerId={providerId} />
     </main>
   );
 }
 
-export { ModelAdmin };
+export { ModelAdmin, AdminCatalogue, AdminLogin };
