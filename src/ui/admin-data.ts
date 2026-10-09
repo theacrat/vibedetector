@@ -27,6 +27,7 @@ function useAdmin() {
       const parsedProviders = parseProviders(providerCatalogue);
       setModels(parseCatalogue(catalogue));
       setProviders(parsedProviders);
+      return parsedProviders;
     } catch (error) {
       if (error instanceof RequestError && error.status === 401) {
         setModels(undefined);
@@ -34,6 +35,7 @@ function useAdmin() {
         throw error;
       }
     }
+    return;
   }, []);
   const run = useCallback(
     async (path?: string, body?: object) => {
@@ -51,7 +53,9 @@ function useAdmin() {
         if (path === "/api/admin/logout") {
           setModels(undefined);
         } else {
-          await read();
+          const catalogue = await read();
+          setPending(false);
+          return catalogue;
         }
       } catch (error) {
         if (error instanceof RequestError && error.status === 401) {
@@ -60,6 +64,7 @@ function useAdmin() {
         setAdminError(error instanceof Error ? error.message : "Could not update the catalogue.");
       }
       setPending(false);
+      return;
     },
     [read],
   );

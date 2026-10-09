@@ -109,7 +109,42 @@ form.admin-panel {
   justify-content: flex-end;
   gap: 8px;
 }
+.admin-provider-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.admin-provider-summary span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.admin-provider-summary small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+}
+.admin a.plain-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+}
+.admin :focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: 4px;
+}
 @media (max-width: 600px) {
+  .admin {
+    padding-block: 24px;
+  }
+  .admin-panel {
+    padding: 16px;
+  }
+  .admin-heading {
+    flex-wrap: wrap;
+  }
   .admin-models li {
     align-items: flex-start;
     flex-direction: column;
