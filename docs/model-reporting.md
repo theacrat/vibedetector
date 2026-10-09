@@ -16,6 +16,8 @@ The original SQL schema restricts provider IDs through a CHECK constraint. The m
 
 Graph filter is independent of the reporting selection and stored in `?model=` alongside range. `All models` includes unspecified reports; `Unspecified` selects null metadata. Filter only displayed buckets and graph category/peak statistics. Provider hourly totals, sufficient-data gating, baseline and verdict always use all provider reports. Hide provider baseline/ratio on filtered graphs rather than implying a model-level algorithm. Empty filtered results must not change the provider verdict.
 
+Invalid or cross-provider filters are rejected at the API/server boundary and normalised to all models in browser URL parsing. Model changes preserve the selected range; range changes preserve the selected model. Provider navigation starts with all models so a label from one provider never leaks into another.
+
 Remove the chart's entire `x reports since time` line. Keep range controls and add an accessible model filter. Retain local-time axes/tooltips and challenge UX.
 
 Verify migration preserves old rows, model validation, persistence/change/undo, provider-only verdict invariance for every filter, shareable model/range URLs, new provider paths, anti-bot gates and mobile selectors. Run local gates and independent standards/spec reviews before merge. Do not deploy or migrate production without release approval.
