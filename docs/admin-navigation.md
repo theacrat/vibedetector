@@ -10,4 +10,6 @@ The combined review also closes PR #7 findings: optional blank provider logos us
 
 The provider list is the sole authenticated dashboard content, not a second catalogue panel beneath every provider form. A provider editor includes exactly one provider and its model rows. Read-only UUID labels may be collapsed or small secondary text; primary labels and controls use human display names. Navigation and save feedback must remain readable at mobile widths.
 
+Creation uses the authoritative mutation response to open the new UUID editor. A refresh failure after a committed save must be reported as refresh failure, not as a failed write or an invitation to duplicate the record. If the user leaves creation while a request is pending, a late completion cannot redirect the new screen.
+
 Review both PR #7 (`06774c9...c6f4bed`) and this rework against standards and their own specs. Fix every finding and repeat independent reviews until clean before merging this rework. Run exact-head build/format/zero-warning lint/types/full tests/browser/packaging gates. User requested merge, not deployment of this rework.
