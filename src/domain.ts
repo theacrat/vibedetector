@@ -9,8 +9,8 @@ const providers = [
   { id: "mistral", maker: "Mistral AI", name: "Mistral", status: "https://status.mistral.ai" },
   { id: "deepseek", maker: "DeepSeek", name: "DeepSeek", status: "https://status.deepseek.com" },
   { id: "cursor", maker: "Anysphere", name: "Cursor", status: "https://status.cursor.com" },
-  { id: "zai", maker: "Z.AI", name: "Z.AI", status: "https://status.z.ai" },
-  { id: "kimi", maker: "Moonshot AI", name: "Kimi", status: "https://status.moonshot.ai" },
+  { id: "zai", maker: "Z.AI", name: "Z.AI", status: "https://z.ai", statusLabel: "Z.AI website" },
+  { id: "kimi", maker: "Moonshot AI", name: "Kimi", status: "https://status.moonshot.cn" },
 ] as const;
 type Provider = (typeof providers)[number];
 type ProviderId = Provider["id"];

@@ -4,6 +4,8 @@ Reports remain provider-level contributions. Add nullable model metadata from a 
 
 Add `/zai` (Z.AI) and `/kimi` (Kimi) to the shared provider registry, homepage, other-provider links, sitemap and logos. Existing providers and URLs stay stable. Hardcoded model lists are UI labels, not an assertion of live availability.
 
+Initial model labels are curated from the models.dev catalogue checked during implementation. Kimi links to Moonshot's official `status.moonshot.cn`. No verified Z.AI status page was found, so link its website as a website, not an official status claim.
+
 Add an additive nullable `model` column via migration; old reports remain unspecified. HTTP and storage boundaries validate model names against the provider list. Omitted model means unspecified for compatibility with existing clients. Session/mutation responses return saved model. Report deduplication and timestamps do not change.
 
 Graph filter is independent of the reporting selection and stored in `?model=` alongside range. `All models` includes unspecified reports; `Unspecified` selects null metadata. Filter only displayed buckets and graph category/peak statistics. Provider hourly totals, sufficient-data gating, baseline and verdict always use all provider reports. Hide provider baseline/ratio on filtered graphs rather than implying a model-level algorithm. Empty filtered results must not change the provider verdict.

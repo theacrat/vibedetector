@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { findProvider, isCategory, isRange, providers, ranges } from "@/domain";
 
 describe("provider registry", () => {
-  it("has eight distinct, shareable provider paths", () => {
+  it("has ten distinct, shareable provider paths", () => {
     expect(providers.map((provider) => provider.id)).toEqual([
       "claude",
       "chatgpt",
@@ -13,8 +13,10 @@ describe("provider registry", () => {
       "mistral",
       "deepseek",
       "cursor",
+      "zai",
+      "kimi",
     ]);
-    expect(new Set(providers.map((provider) => provider.id)).size).toBe(8);
+    expect(new Set(providers.map((provider) => provider.id)).size).toBe(10);
     expect(findProvider("unknown")).toBeUndefined();
   });
 

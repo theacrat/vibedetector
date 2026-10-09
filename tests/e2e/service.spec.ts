@@ -4,9 +4,18 @@ test("homepage links to every provider and provider pages survive reload", async
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await Promise.all(
-    ["claude", "chatgpt", "gemini", "copilot", "grok", "mistral", "deepseek", "cursor"].map(
-      async (id) => expect(page.locator(`main a[href^="/${id}?"]`).first()).toBeVisible(),
-    ),
+    [
+      "claude",
+      "chatgpt",
+      "gemini",
+      "copilot",
+      "grok",
+      "mistral",
+      "deepseek",
+      "cursor",
+      "zai",
+      "kimi",
+    ].map(async (id) => expect(page.locator(`main a[href^="/${id}?"]`).first()).toBeVisible()),
   );
   await page.getByRole("link", { name: "View Claude reports" }).click();
   await expect(page.getByRole("heading", { name: "How's Claude feeling?" })).toBeVisible();
@@ -51,13 +60,22 @@ test("all provider paths return server-rendered content without JavaScript", asy
   const page = await context.newPage();
   try {
     await Promise.all(
-      ["claude", "chatgpt", "gemini", "copilot", "grok", "mistral", "deepseek", "cursor"].map(
-        async (id) => {
-          const response = await context.request.get(`/${id}`);
-          expect(response.status()).toBe(200);
-          expect(await response.text()).toContain("issue reports this hour");
-        },
-      ),
+      [
+        "claude",
+        "chatgpt",
+        "gemini",
+        "copilot",
+        "grok",
+        "mistral",
+        "deepseek",
+        "cursor",
+        "zai",
+        "kimi",
+      ].map(async (id) => {
+        const response = await context.request.get(`/${id}`);
+        expect(response.status()).toBe(200);
+        expect(await response.text()).toContain("issue reports this hour");
+      }),
     );
     await page.goto("/gemini");
     await expect(page.getByRole("heading", { name: "How's Gemini feeling?" })).toBeVisible();
