@@ -103,6 +103,7 @@ function useProviderRange() {
 
 function ProviderHero({ dashboard }: { dashboard: Dashboard }) {
   const { provider } = dashboard;
+  const verdictLabel = dashboard.verdict === "no report spike" ? "good vibes" : dashboard.verdict;
   const verdictColor = {
     "insufficient community data": "var(--muted)",
     "killed the vibe": "var(--broken)",
@@ -130,7 +131,7 @@ function ProviderHero({ dashboard }: { dashboard: Dashboard }) {
           {dashboard.verdict === "insufficient community data" ? (
             <a href="/methodology">{dashboard.verdict}</a>
           ) : (
-            dashboard.verdict
+            verdictLabel
           )}
         </p>
         <p className="sub">

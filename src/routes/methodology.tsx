@@ -26,7 +26,7 @@ const Route = createFileRoute("/methodology")({
       <p>
         Vibes are off when the last hour has at least 10 reports and twice the normal hourly
         average. Killed the vibe means at least 20 reports and five times that average. Otherwise we
-        show no report spike, not confirmed healthy service.
+        show good vibes, meaning no report spike rather than confirmed healthy service.
       </p>
       <p>
         These thresholds are conservative product rules, not a statistical confidence test. Reports
