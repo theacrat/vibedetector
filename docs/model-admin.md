@@ -16,4 +16,6 @@ Model names use exact case-sensitive identity. New names must be trimmed, non-em
 
 UI options use database response lists, not seed imports. Filter URL validation moves to the server catalogue, with invalid/cross-provider filters normalised to all models. Retain existing model report/filter/cancel behaviour. Admin accessibility and loading/errors are required, not a dashboard template redesign.
 
+Successful logout clears authenticated UI state immediately. Login/logout/expired-session transitions move keyboard focus to the new catalogue heading or key field. Malformed catalogue responses produce a visible error rather than an unchecked typed cast or render crash.
+
 Verify unauthenticated access, wrong/oversized keys, login limits, cookie signatures/expiry/rotation, CSRF, add/archive/reactivate, duplicate writes, seed non-overwrite, report rejection for archived models and continued historical filtering. Run existing full gates and independent reviews. PR #5 remains open and unmerged by user instruction. No remote migration, admin secret provisioning or deployment without approval.
