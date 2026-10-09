@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ModelOption, Provider } from "@/domain";
 
@@ -11,6 +11,13 @@ function useAdmin() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [pending, setPending] = useState(true);
   const [adminError, setAdminError] = useState("");
+  const focusId = useRef("");
+  useEffect(() => {
+    if (!pending && models && focusId.current) {
+      document.querySelector<HTMLElement>(`#${CSS.escape(focusId.current)}`)?.focus();
+      focusId.current = "";
+    }
+  }, [models, pending]);
   const read = useCallback(async () => {
     try {
       const [catalogue, providerCatalogue] = await Promise.all([
@@ -30,6 +37,7 @@ function useAdmin() {
   }, []);
   const run = useCallback(
     async (path?: string, body?: object) => {
+      focusId.current = document.activeElement?.id ?? "";
       setPending(true);
       setAdminError("");
       try {

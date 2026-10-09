@@ -36,7 +36,12 @@ function ModelRename({ model, state }: { model: ModelOption; state: AdminState }
         required
         disabled={state.pending}
       />
-      <button className="plain-button" type="submit" disabled={state.pending}>
+      <button
+        id={`model-save-${model.id}`}
+        className="plain-button"
+        type="submit"
+        disabled={state.pending}
+      >
         Save model name
       </button>
     </form>

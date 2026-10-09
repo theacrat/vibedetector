@@ -1,12 +1,11 @@
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState, useCallback } from "react";
 
-import { isId } from "@/domain";
 import type { Category, ModelOption, ProviderId } from "@/domain";
 
-import { parseCatalogue } from "./catalogue-data";
 import { requestJson, RequestError } from "./data";
 import { reportingWindowDelay } from "./report-window";
+import { readSession } from "./session-data";
 import { loadTurnstile, mountWidget } from "./turnstile";
 
 interface Session {
@@ -23,14 +22,6 @@ interface Intent {
 }
 type Phase = "verifying" | "submitting" | "error";
 type ReportState = ReturnType<typeof useReportState>;
-
-async function readSession(id: ProviderId, signal?: AbortSignal) {
-  const session = await requestJson<Session>(`/api/session/${id}`, signal ? { signal } : undefined);
-  if (!Number.isFinite(session.window) || (session.model !== null && !isId(session.model))) {
-    throw new TypeError("Could not load the reporting window. Please try again.");
-  }
-  return { ...session, models: parseCatalogue(session.models) };
-}
 
 function useReportState() {
   // DOM callback refs use null when the dialog unmounts.
@@ -318,4 +309,4 @@ function useReportMutation(id: ProviderId, state: ReportState) {
 }
 
 export { useReportState, useReportWindow, useReportMutation };
-export type { ReportState };
+export type { ReportState, Session };

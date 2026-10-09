@@ -61,7 +61,7 @@ function ProviderForm({ provider, state }: { provider?: Provider; state: AdminSt
         letters, numbers and hyphens.
       </p>
       <p>Status links must use HTTPS. Logos must use a controlled local path or HTTPS URL.</p>
-      <button className="plain-button" type="submit" disabled={state.pending}>
+      <button id={`${prefix}-save`} className="plain-button" type="submit" disabled={state.pending}>
         {provider ? "Save provider" : "Add provider"}
       </button>
     </form>
