@@ -1,8 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import { findProvider, isCategory, isRange, providers, ranges } from "@/domain";
+import {
+  findProvider,
+  isCategory,
+  isRange,
+  providers,
+  ranges,
+  isProviderModel,
+  isModelFilter,
+} from "@/domain";
 
 describe("provider registry", () => {
+  it("validates model metadata against its provider and separates filters", () => {
+    expect(isProviderModel("claude", "Claude Sonnet 5.5")).toBe(true);
+    expect(isProviderModel("claude", "GLM-5.3")).toBe(false);
+    expect(isProviderModel("zai", "GLM-5.3")).toBe(true);
+    expect(isProviderModel("kimi", "Kimi K3")).toBe(true);
+    expect(isModelFilter("claude", "")).toBe(true);
+    expect(isModelFilter("claude", "unspecified")).toBe(true);
+    expect(isProviderModel("claude", "unspecified")).toBe(false);
+    expect(isModelFilter("claude", "<script>")).toBe(false);
+  });
   it("has ten distinct, shareable provider paths", () => {
     expect(providers.map((provider) => provider.id)).toEqual([
       "claude",
