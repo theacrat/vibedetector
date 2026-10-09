@@ -8,6 +8,8 @@ Initial model labels are curated from the models.dev catalogue checked during im
 
 Add an additive nullable `model` column via migration; old reports remain unspecified. HTTP and storage boundaries validate model names against the provider list. Omitted model means unspecified for compatibility with existing clients. Session/mutation responses return saved model. Report deduplication and timestamps do not change.
 
+The original SQL schema restricts provider IDs through a CHECK constraint. The migration must preserve rows while expanding that constraint for Z.AI and Kimi, then preserve both timestamp indexes. Test the migration against populated v1 data before any production execution.
+
 Graph filter is independent of the reporting selection and stored in `?model=` alongside range. `All models` includes unspecified reports; `Unspecified` selects null metadata. Filter only displayed buckets and graph category/peak statistics. Provider hourly totals, sufficient-data gating, baseline and verdict always use all provider reports. Hide provider baseline/ratio on filtered graphs rather than implying a model-level algorithm. Empty filtered results must not change the provider verdict.
 
 Remove the chart's entire `x reports since time` line. Keep range controls and add an accessible model filter. Retain local-time axes/tooltips and challenge UX.
