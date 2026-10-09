@@ -33,6 +33,7 @@ function isSlug(value: unknown): value is string {
   return (
     typeof value === "string" &&
     value.length <= 80 &&
+    !isId(value) &&
     /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(value) &&
     !reservedSlugs.has(value)
   );
@@ -131,9 +132,9 @@ async function resolveProvider(
 ): Promise<Provider> {
   const row = await db
     .prepare(
-      `SELECT * FROM providers WHERE (slug = ? OR id = ?) ${activeOnly ? "AND active = 1" : ""}`,
+      `SELECT * FROM providers WHERE ${isId(slugOrId) ? "id" : "slug"} = ? ${activeOnly ? "AND active = 1" : ""}`,
     )
-    .bind(slugOrId, slugOrId)
+    .bind(slugOrId)
     .first<unknown>();
   if (!row) {
     throw new ApiError(404, "Unknown provider");

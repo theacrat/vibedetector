@@ -17,13 +17,17 @@ describe("catalogue identities", () => {
       expect(new Set(names).size).toBe(names.length);
     }
     expect(
-      ["claude", "GPT-6", "00000000-0000-0000-0000-000000000000", undefined].map(isId),
+      ["claude", "GPT-6", "00000000-0000-0000-0000-000000000000", undefined].map((value) =>
+        isId(value),
+      ),
     ).toEqual([false, false, false, false]);
   });
 
   it("accepts generic display names but canonical nonreserved slugs", () => {
     expect(
-      ["New provider", "Renamed", "unspecified", "", " padded ", "bad\nname"].map(isModelName),
+      ["New provider", "Renamed", "unspecified", "", " padded ", "bad\nname"].map((value) =>
+        isModelName(value),
+      ),
     ).toEqual([true, true, true, false, false, false]);
     expect(
       [
@@ -39,15 +43,17 @@ describe("catalogue identities", () => {
         "Claude",
         "../path",
         "two--hyphens",
-      ].map(isSlug),
+      ].map((value) => isSlug(value)),
     ).toEqual([true, false, false, false, false, false, false, false, false, false, false, false]);
   });
 
   it("keeps category and bucket contracts", () => {
-    expect(["nerfed", "slow", "broken", "healthy", "__proto__", undefined].map(isCategory)).toEqual(
-      [true, true, true, false, false, false],
-    );
-    expect(["6h", "24h", "7d", "1y", "__proto__"].map(isRange)).toEqual([
+    expect(
+      ["nerfed", "slow", "broken", "healthy", "__proto__", undefined].map((value) =>
+        isCategory(value),
+      ),
+    ).toEqual([true, true, true, false, false, false]);
+    expect(["6h", "24h", "7d", "1y", "__proto__"].map((value) => isRange(value))).toEqual([
       true,
       true,
       true,
