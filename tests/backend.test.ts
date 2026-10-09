@@ -378,6 +378,8 @@ test("provider URLs and slugs reject unsafe values and duplicate display values 
       "UPPER",
       "../escape",
       "abcdefab-0000-4000-8000-000000000001",
+      "abcdefab-cdef-0abc-8abc-abcdefabcdef",
+      "abcdefab-cdef-fabc-0abc-abcdefabcdef",
     ].map(async (slug) => {
       const observed15 = await handleApi(
         request("/api/admin/providers", { ...provider, slug }, cookie),

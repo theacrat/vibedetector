@@ -33,7 +33,7 @@ function isSlug(value: unknown): value is string {
   return (
     typeof value === "string" &&
     value.length <= 80 &&
-    !isId(value) &&
+    !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u.test(value) &&
     /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(value) &&
     !reservedSlugs.has(value)
   );
