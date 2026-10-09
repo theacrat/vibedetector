@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { Provider } from "@/domain";
 
@@ -150,9 +150,22 @@ function ProviderList({ state }: { state: AdminState }) {
 
 function ProviderCreation({ state }: { state: AdminState }) {
   const navigate = useNavigate();
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const created = useCallback(
-    (providerId: string) => {
-      void navigate({ params: { provider: providerId }, to: "/admin/providers/$provider" });
+    (provider: Provider) => {
+      if (mounted.current) {
+        void navigate({
+          params: { provider: provider.id },
+          state: { savedProvider: provider },
+          to: "/admin/providers/$provider",
+        });
+      }
     },
     [navigate],
   );

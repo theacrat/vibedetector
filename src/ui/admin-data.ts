@@ -6,9 +6,9 @@ import { parseCatalogue, parseProviders } from "./catalogue-data";
 import { requestJson, RequestError } from "./data";
 
 // oxlint-disable-next-line eslint/max-lines-per-function
-function useAdmin() {
-  const [models, setModels] = useState<ModelOption[]>();
-  const [providers, setProviders] = useState<Provider[]>([]);
+function useAdmin(savedProvider?: Provider) {
+  const [models, setModels] = useState<ModelOption[] | undefined>(savedProvider ? [] : undefined);
+  const [providers, setProviders] = useState<Provider[]>(savedProvider ? [savedProvider] : []);
   const [pending, setPending] = useState(true);
   const [adminError, setAdminError] = useState("");
   const focusId = useRef("");
@@ -27,44 +27,56 @@ function useAdmin() {
       const parsedProviders = parseProviders(providerCatalogue);
       setModels(parseCatalogue(catalogue));
       setProviders(parsedProviders);
-      return parsedProviders;
     } catch (error) {
       if (error instanceof RequestError && error.status === 401) {
         setModels(undefined);
-      } else {
-        throw error;
       }
+      throw error;
     }
-    return;
   }, []);
   const run = useCallback(
     async (path?: string, body?: object) => {
       focusId.current = document.activeElement?.id ?? "";
       setPending(true);
       setAdminError("");
+      let authoritative: Provider[] | ModelOption[] | undefined;
       try {
         if (path) {
-          await requestJson<unknown>(path, {
+          const response = await requestJson<unknown>(path, {
             body: JSON.stringify(body ?? {}),
             headers: { "Content-Type": "application/json" },
             method: "POST",
           });
+          if (path.startsWith("/api/admin/providers")) {
+            authoritative = parseProviders(response);
+            setProviders(authoritative);
+          } else if (path.startsWith("/api/admin/models")) {
+            authoritative = parseCatalogue(response);
+            setModels(authoritative);
+          }
         }
         if (path === "/api/admin/logout") {
           setModels(undefined);
         } else {
-          const catalogue = await read();
+          await read();
           setPending(false);
-          return catalogue;
+          return authoritative;
         }
       } catch (error) {
         if (error instanceof RequestError && error.status === 401) {
           setModels(undefined);
+          authoritative = undefined;
         }
-        setAdminError(error instanceof Error ? error.message : "Could not update the catalogue.");
+        let message = error instanceof Error ? error.message : "Could not update the catalogue.";
+        if (authoritative) {
+          message = path?.startsWith("/api/admin/providers")
+            ? "Provider saved but catalogue refresh failed."
+            : "Model saved but catalogue refresh failed.";
+        }
+        setAdminError(message);
       }
       setPending(false);
-      return;
+      return authoritative;
     },
     [read],
   );
@@ -73,12 +85,20 @@ function useAdmin() {
       try {
         await read();
       } catch (error) {
-        setAdminError(error instanceof Error ? error.message : "Could not load the catalogue.");
+        if (error instanceof RequestError && error.status === 401) {
+          setModels(undefined);
+        }
+        const message = error instanceof Error ? error.message : "Could not load the catalogue.";
+        setAdminError(
+          savedProvider && !(error instanceof RequestError && error.status === 401)
+            ? "Provider saved but catalogue refresh failed."
+            : message,
+        );
       }
       setPending(false);
     }
     void initialize();
-  }, [read]);
+  }, [read, savedProvider]);
   return { error: adminError, models, pending, providers, run };
 }
 

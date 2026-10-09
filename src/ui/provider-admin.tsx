@@ -22,7 +22,7 @@ function ProviderForm({
 }: {
   provider?: Provider;
   state: AdminState;
-  onCreated?: (id: string) => void;
+  onCreated?: (provider: Provider) => void;
 }) {
   const prefix = provider?.id ?? "new-provider";
   const save = useCallback(
@@ -42,14 +42,14 @@ function ProviderForm({
           ...(provider ? { id: provider.id } : {}),
         },
       );
-      if (!provider && catalogue) {
+      if (!provider && catalogue && catalogue.every((entry) => "slug" in entry)) {
         const created = catalogue.find(
           (entry) =>
             entry.slug === displayFields["slug"] &&
             !state.providers.some((previous) => previous.id === entry.id),
         );
         if (created) {
-          onCreated?.(created.id);
+          onCreated?.(created);
         }
       }
     },

@@ -55,7 +55,7 @@ test("admin key stays out of URLs and storage while UUID catalogue changes persi
       });
     }
     const catalogueResponse = path.endsWith("/providers") ? adminProviders : catalogue;
-    await route.fulfill({ json: body ? { ok: true } : catalogueResponse });
+    await route.fulfill({ json: path.endsWith("/login") ? { ok: true } : catalogueResponse });
   });
   await page.goto("/admin");
   const input = page.getByLabel("Administrator key");
@@ -219,7 +219,7 @@ test("model UUID order includes archived rows and retains movement focus", async
       }
       writes.push(body);
       catalogue = body.ids.flatMap((id: unknown) => catalogue.filter((model) => model.id === id));
-      await route.fulfill({ json: { ok: true } });
+      await route.fulfill({ json: catalogue });
       return;
     }
     await route.fulfill({
@@ -271,7 +271,7 @@ test("reorder waits for authoritative catalogue and errors do not move rows", as
       await route.fulfill(
         rejectOrder
           ? { json: { error: "Could not save model order." }, status: 503 }
-          : { json: { ok: true } },
+          : { json: [catalogue[2], catalogue[0], catalogue[1]] },
       );
       return;
     }
@@ -325,7 +325,7 @@ test("provider edits preserve UUID and slug unless explicitly changed", async ({
           providers.filter((provider) => provider.id === id),
         );
       }
-      await route.fulfill({ json: { ok: true } });
+      await route.fulfill({ json: providers });
       return;
     }
     await route.fulfill({ json: path.endsWith("/providers") ? providers : [] });

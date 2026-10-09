@@ -54,7 +54,7 @@ test("static creation route opens the newly created provider UUID", async ({ pag
         status: "https://status.example.com",
         statusLabel: "Service status",
       });
-      await route.fulfill({ json: { ok: true } });
+      await route.fulfill({ json: providers });
       return;
     }
     await route.fulfill({ json: path.endsWith("/providers") ? providers : [] });
@@ -86,6 +86,72 @@ test("static creation route opens the newly created provider UUID", async ({ pag
   ]);
 });
 
+test("a delayed creation cannot navigate after leaving the creation screen", async ({ page }) => {
+  const id = "10000000-0000-4000-8000-000000000004";
+  const { promise: release, resolve } = Promise.withResolvers<undefined>();
+  await page.route("**/api/admin/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() === "POST") {
+      await release;
+      await route.fulfill({
+        json: [{ ...adminProviders[0], id, name: "Delayed provider", slug: "delayed-provider" }],
+      });
+      return;
+    }
+    await route.fulfill({ json: path.endsWith("/providers") ? adminProviders : [] });
+  });
+  await page.goto("/admin/providers/new");
+  await page.getByLabel("Provider name").fill("Delayed provider");
+  await page.getByLabel("URL slug").fill("delayed-provider");
+  await page.getByLabel("Maker", { exact: true }).fill("Maker");
+  await page.getByLabel("Official status URL").fill("https://status.example.com");
+  await page.getByLabel("Status link label").fill("Service status");
+  await page.getByRole("button", { exact: true, name: "Add provider" }).click();
+  await page.getByRole("link", { name: "All providers" }).click();
+  const completed = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" && response.url().endsWith("/api/admin/providers"),
+  );
+  resolve(undefined);
+  await completed;
+  await page.getByRole("link", { name: "Edit Claude" }).click();
+  await page.getByRole("link", { name: "All providers" }).click();
+  await expect(page).toHaveURL("/admin");
+  await expect(page.getByRole("heading", { exact: true, name: "Providers" })).toBeVisible();
+});
+
+test("a successful provider write opens its editor when catalogue refresh fails", async ({
+  page,
+}) => {
+  const id = "10000000-0000-4000-8000-000000000005";
+  let created = false;
+  await page.route("**/api/admin/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() === "POST") {
+      created = true;
+      await route.fulfill({
+        json: [{ ...adminProviders[0], id, name: "Refresh failure", slug: "refresh-failure" }],
+      });
+      return;
+    }
+    if (created && path.endsWith("/providers")) {
+      await route.fulfill({ json: { error: "Refresh unavailable." }, status: 503 });
+      return;
+    }
+    await route.fulfill({ json: path.endsWith("/providers") ? adminProviders : [] });
+  });
+  await page.goto("/admin/providers/new");
+  await page.getByLabel("Provider name").fill("Refresh failure");
+  await page.getByLabel("URL slug").fill("refresh-failure");
+  await page.getByLabel("Maker", { exact: true }).fill("Maker");
+  await page.getByLabel("Official status URL").fill("https://status.example.com");
+  await page.getByLabel("Status link label").fill("Service status");
+  await page.getByRole("button", { exact: true, name: "Add provider" }).click();
+  await expect(page).toHaveURL(`/admin/providers/${id}`);
+  await expect(page.getByRole("heading", { name: "Edit Refresh failure" })).toBeFocused();
+  await expect(page.getByRole("alert")).toHaveText("Provider saved but catalogue refresh failed.");
+});
+
 test("authentication preserves the requested edit route", async ({ page }) => {
   let authenticated = false;
   await page.route("**/api/admin/**", async (route) => {
@@ -112,6 +178,41 @@ test("authentication preserves the requested edit route", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Edit ChatGPT" })).toBeFocused();
 });
 
+test("successful model writes retain authoritative names when refresh fails", async ({ page }) => {
+  const catalogue = models(["Original model"]);
+  let written = false;
+  await page.route("**/api/admin/**", async (route) => {
+    if (route.request().method() === "POST") {
+      const body: unknown = route.request().postDataJSON();
+      if (
+        !body ||
+        typeof body !== "object" ||
+        !("name" in body) ||
+        typeof body.name !== "string" ||
+        !catalogue[0]
+      ) {
+        throw new Error("Expected model rename.");
+      }
+      catalogue[0].name = body.name;
+      written = true;
+      await route.fulfill({ json: catalogue });
+      return;
+    }
+    if (written) {
+      await route.fulfill({ json: { error: "Refresh unavailable." }, status: 503 });
+      return;
+    }
+    await route.fulfill({
+      json: route.request().url().endsWith("/providers") ? adminProviders : catalogue,
+    });
+  });
+  await page.goto(`/admin/providers/${claudeId}`);
+  await page.getByLabel("Rename Original model").fill("Saved model");
+  await page.getByRole("button", { name: "Save model name" }).click();
+  await expect(page.getByLabel("Rename Saved model")).toHaveValue("Saved model");
+  await expect(page.getByRole("alert")).toHaveText("Model saved but catalogue refresh failed.");
+});
+
 test("model operations retain unsaved fields and failed writes retain edits", async ({ page }) => {
   let rejectWrites = false;
   const catalogue = models(["First model", "Second model"]);
@@ -134,7 +235,7 @@ test("model operations retain unsaved fields and failed writes retain edits", as
           entry.name = body.name;
         }
       }
-      await route.fulfill({ json: { ok: true } });
+      await route.fulfill({ json: catalogue });
       return;
     }
     await route.fulfill({
