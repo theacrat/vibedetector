@@ -1,5 +1,7 @@
 # UUID catalogue cutover
 
+Replacement database prepared as `vibedetector-uuid-production` (`91932361-4b4a-42d2-a422-fea57689125e`). A fresh protected export was imported and UUID migration applied without modifying the source database. Reconciliation returned 10 providers, 60 models, 2 reports and no foreign-key violations. Worker binding changes are pending final reviewed-head gates and deployment; the original dedicated database remains rollback storage.
+
 Approved scope is Worker `vibedetector` in account `85cd914334836de8bb8e1f0874e11da8` and its dedicated D1 database `vibedetector-community-production` (`a73bac50-12b3-4bb3-a427-c8207e35dad7`). The older database named `vibedetector` is unrelated and excluded.
 
 1. Complete local schema/UI migration and independent review before remote writes.
