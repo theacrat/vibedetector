@@ -12,6 +12,8 @@ Generate the key randomly, not as a memorable password. Server verifies bounded 
 
 Public GET `/api/models/:provider` returns `ModelOption[]`. Authenticated GET `/api/admin/models` returns all entries. POST `/api/admin/models` takes `{provider,name}`. POST `/api/admin/models/state` takes `{provider,name,active}`. Validate names, length, reserved filter words and provider; duplicate adds are idempotent. Public data refresh fetches catalogue changes without restarting the Worker.
 
+Model names use exact case-sensitive identity. New names must be trimmed, non-empty, at most 120 characters, free of control characters and not the reserved filter value `unspecified`; do not silently rewrite a saved name. Stored active values must be exactly D1 integer 0 or 1 before conversion to a boolean.
+
 UI options use database response lists, not seed imports. Filter URL validation moves to the server catalogue, with invalid/cross-provider filters normalised to all models. Retain existing model report/filter/cancel behaviour. Admin accessibility and loading/errors are required, not a dashboard template redesign.
 
 Verify unauthenticated access, wrong/oversized keys, login limits, cookie signatures/expiry/rotation, CSRF, add/archive/reactivate, duplicate writes, seed non-overwrite, report rejection for archived models and continued historical filtering. Run existing full gates and independent reviews. PR #5 remains open and unmerged by user instruction. No remote migration, admin secret provisioning or deployment without approval.
