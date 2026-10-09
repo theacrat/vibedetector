@@ -21,7 +21,7 @@ Model reporting is optional. The database catalogue supplies available models; `
 
 ## Model administration
 
-Open `/admin` to add models or archive/reactivate them. Names cannot be renamed or deleted, preserving historical report filters. Set `ADMIN_KEY` as a Worker secret with at least 32 random characters. Never put it in Wrangler vars or commit it. The panel is disabled if the secret or admin rate limiter is missing.
+Open `/admin` to add models or archive/reactivate them. Names cannot be renamed or deleted, preserving historical report filters. Set `ADMIN_KEY` as a Worker secret with at least 32 randomly generated characters, not a memorable password. Never put it in Wrangler vars or commit it. The panel is disabled if the secret or admin rate limiter is missing.
 
 For local development, use an ignored `.dev.vars` file containing a test-only `ADMIN_KEY`. Production uses Wrangler's protected secret input. Key entry exchanges the key for a one-hour HttpOnly session; the panel never stores it in localStorage or URL parameters. Rotate the key to revoke existing sessions. The initial migration uses INSERT OR IGNORE; deployments do not reset your catalogue edits.
 
