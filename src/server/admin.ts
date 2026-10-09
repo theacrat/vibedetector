@@ -2,7 +2,7 @@
 // oxlint-disable-next-line import/no-nodejs-modules
 import { timingSafeEqual } from "node:crypto";
 
-import { loadModels, parseModel } from "./catalogue";
+import { loadModels, orderModels, parseModel } from "./catalogue";
 import { ApiError, readJson } from "./security";
 
 const COOKIE = "vd_admin";
@@ -115,12 +115,17 @@ async function mutateCatalogue(
   bindings: Cloudflare.Env,
 ): Promise<Response> {
   const headers = { "Cache-Control": "no-store" };
+  if (path === "/api/admin/models/order") {
+    await orderModels(bindings.DB, body);
+    return Response.json(await loadModels(bindings.DB), { headers });
+  }
   const model = parseModel(body);
   if (path === "/api/admin/models") {
     await bindings.DB.prepare(
-      "INSERT OR IGNORE INTO models (provider, name, active) VALUES (?, ?, 1)",
+      `INSERT OR IGNORE INTO models (provider, name, active, position)
+       SELECT ?, ?, 1, COALESCE(MAX(position), -1) + 1 FROM models WHERE provider = ?`,
     )
-      .bind(model.provider, model.name)
+      .bind(model.provider, model.name, model.provider)
       .run();
   } else if (path === "/api/admin/models/state") {
     if (
