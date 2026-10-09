@@ -367,6 +367,7 @@ test("provider URLs and slugs reject unsafe values and duplicate display values 
   if (!provider) {
     throw new Error("Missing provider seed");
   }
+  expect(parseProvider({ ...provider, logo: "" }).logo).toBe("");
   await Promise.all(
     [
       "api",
@@ -545,6 +546,28 @@ test("HTTP reports return UUIDs and restore them through the same signed browser
     verified,
   );
   expect(observed30.status).toBe(429);
+});
+
+test("report API returns 404 without persisting when provider is archived during Turnstile verification", async () => {
+  const db = await database();
+  const model = await firstModel(db);
+  const window = Math.floor(Date.now() / HOUR);
+  const response = await handleApi(
+    request(`/api/reports/${CLAUDE}`, {
+      category: "slow",
+      model: model.id,
+      token: "dummy",
+      window,
+    }),
+    bindings(db),
+    async () => {
+      await db.prepare("UPDATE providers SET active = 0 WHERE id = ?").bind(CLAUDE).run();
+      return verified();
+    },
+  );
+  expect(response.status).toBe(404);
+  expect(await resolveProvider(db, CLAUDE, false)).toMatchObject({ active: false });
+  expect(await db.prepare("SELECT * FROM reports").all()).toMatchObject({ results: [] });
 });
 
 test("admin authentication and CSRF stay fail closed for both catalogues", async () => {

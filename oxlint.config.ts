@@ -21,6 +21,12 @@ export default defineConfig({
   },
   overrides: [
     {
+      files: ["tests/ui-fixtures.ts", "tests/e2e/identity-fixtures.ts"],
+      rules: {
+        "import/prefer-default-export": "off",
+      },
+    },
+    {
       files: ["src/**/*.tsx"],
       rules: {
         "react/forbid-component-props": [

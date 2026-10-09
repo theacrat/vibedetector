@@ -109,6 +109,13 @@ async function saveReport(
     .bind(provider, identity, Math.floor(now / HOUR), now, category, model)
     .first<unknown>();
   if (!row) {
+    const activeProvider = await db
+      .prepare("SELECT 1 FROM providers WHERE id = ? AND active = 1")
+      .bind(provider)
+      .first();
+    if (!activeProvider) {
+      throw new ApiError(404, "Unknown provider");
+    }
     throw new ApiError(400, "Invalid report model");
   }
   return readSession(row).category;

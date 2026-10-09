@@ -55,7 +55,7 @@ test("admin key stays out of URLs and storage while UUID catalogue changes persi
       });
     }
     const catalogueResponse = path.endsWith("/providers") ? adminProviders : catalogue;
-    await route.fulfill({ json: body ? { ok: true } : catalogueResponse });
+    await route.fulfill({ json: path.endsWith("/login") ? { ok: true } : catalogueResponse });
   });
   await page.goto("/admin");
   const input = page.getByLabel("Administrator key");
@@ -67,16 +67,17 @@ test("admin key stays out of URLs and storage while UUID catalogue changes persi
   await expect(input).toHaveValue("");
   await input.fill(key);
   await page.getByRole("button", { exact: true, name: "Sign in" }).click();
-  await expect(page.getByRole("heading", { name: "Model catalogue" })).toBeFocused();
-  expect(await page.getByLabel("Provider", { exact: true }).locator("option").count()).toBe(2);
-  await page.getByLabel("Provider", { exact: true }).selectOption(chatgptId);
+  await expect(page.getByRole("heading", { exact: true, name: "Providers" })).toBeFocused();
+  await page.getByRole("link", { name: "Edit ChatGPT" }).click();
+  await expect(page.getByRole("heading", { name: "Edit ChatGPT" })).toBeFocused();
+  await expect(page.getByLabel("Provider", { exact: true })).toHaveCount(0);
   await page.getByLabel("Model name", { exact: true }).fill("New database model");
   await page.getByRole("button", { name: "Add model" }).click();
   await expect(
     page.getByRole("button", { exact: true, name: "Archive New database model" }),
   ).toBeEnabled();
   await page.getByRole("button", { exact: true, name: "Archive New database model" }).click();
-  await expect(page.getByRole("button", { name: "Reactivate New database model" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Reactivate New database model" })).toBeFocused();
   await page.getByRole("button", { name: "Reactivate New database model" }).click();
   await expect(
     page.getByRole("button", { exact: true, name: "Archive New database model" }),
@@ -176,7 +177,7 @@ test("logout clears catalogue without follow-up reads", async ({ page }) => {
     });
   });
   await page.goto("/admin");
-  await expect(page.getByRole("heading", { name: "Model catalogue" })).toBeFocused();
+  await expect(page.getByRole("heading", { exact: true, name: "Providers" })).toBeFocused();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByLabel("Administrator key")).toBeFocused();
   await expect(page.getByRole("heading", { name: "Model catalogue" })).toHaveCount(0);
@@ -196,6 +197,7 @@ test("expired authentication returns focus to the key input", async ({ page }) =
     );
   });
   await page.goto("/admin");
+  await page.getByRole("link", { name: "Edit Claude" }).click();
   await page.getByRole("button", { exact: true, name: "Archive Live model" }).click();
   await expect(page.getByLabel("Administrator key")).toBeFocused();
   await expect(page.getByRole("alert")).toHaveText("Session expired.");
@@ -217,7 +219,7 @@ test("model UUID order includes archived rows and retains movement focus", async
       }
       writes.push(body);
       catalogue = body.ids.flatMap((id: unknown) => catalogue.filter((model) => model.id === id));
-      await route.fulfill({ json: { ok: true } });
+      await route.fulfill({ json: catalogue });
       return;
     }
     await route.fulfill({
@@ -225,6 +227,7 @@ test("model UUID order includes archived rows and retains movement focus", async
     });
   });
   await page.goto("/admin");
+  await page.getByRole("link", { name: "Edit Claude" }).click();
   const rows = page.locator(".admin-models b");
   await expect(rows).toHaveText(["First model", "Archived model", "Last model"]);
   await expect(
@@ -253,7 +256,8 @@ test("model UUID order includes archived rows and retains movement focus", async
   await expect(rows).toHaveText(["Archived model", "First model", "Last model"]);
   await page.reload();
   await expect(rows).toHaveText(["Archived model", "First model", "Last model"]);
-  await page.getByLabel("Provider", { exact: true }).selectOption(chatgptId);
+  await page.getByRole("link", { name: "All providers" }).click();
+  await page.getByRole("link", { name: "Edit ChatGPT" }).click();
   await expect(rows).toHaveCount(0);
 });
 
@@ -267,7 +271,7 @@ test("reorder waits for authoritative catalogue and errors do not move rows", as
       await route.fulfill(
         rejectOrder
           ? { json: { error: "Could not save model order." }, status: 503 }
-          : { json: { ok: true } },
+          : { json: [catalogue[2], catalogue[0], catalogue[1]] },
       );
       return;
     }
@@ -277,6 +281,7 @@ test("reorder waits for authoritative catalogue and errors do not move rows", as
     });
   });
   await page.goto("/admin");
+  await page.getByRole("link", { name: "Edit Claude" }).click();
   const rows = page.locator(".admin-models b");
   const down = page.getByRole("button", { exact: true, name: "Move down First model" });
   await down.click();
@@ -320,19 +325,19 @@ test("provider edits preserve UUID and slug unless explicitly changed", async ({
           providers.filter((provider) => provider.id === id),
         );
       }
-      await route.fulfill({ json: { ok: true } });
+      await route.fulfill({ json: providers });
       return;
     }
     await route.fulfill({ json: path.endsWith("/providers") ? providers : [] });
   });
   await page.goto("/admin");
-  await page.getByText("Edit Claude", { exact: true }).click();
+  await page.getByRole("link", { name: "Edit Claude" }).click();
   const form = page
     .locator(".admin-provider-form")
     .filter({ has: page.locator(`input[id="${claudeId}-name"]`) });
   await form.getByLabel("Provider name").fill("Claude corrected");
   await form.getByRole("button", { name: "Save provider" }).click();
-  await expect(page.getByText("Edit Claude corrected", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Edit Claude corrected" })).toBeVisible();
   expect(writes[0]).toEqual({
     id: claudeId,
     logo: "/logos/claude.svg",
@@ -351,7 +356,8 @@ test("provider edits preserve UUID and slug unless explicitly changed", async ({
     .click();
   await expect(
     page.getByRole("button", { exact: true, name: "Reactivate provider Claude corrected" }),
-  ).toBeEnabled();
+  ).toBeFocused();
+  await page.getByRole("link", { name: "All providers" }).click();
   await page
     .getByRole("button", { exact: true, name: "Move down provider Claude corrected" })
     .click();
