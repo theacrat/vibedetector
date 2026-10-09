@@ -34,12 +34,14 @@ function ModelSelect({
     >
       <option value="">{filter ? "All models" : "model"}</option>
       {filter && <option value="unspecified">Unspecified</option>}
-      {options.map(({ name, active }) => (
-        <option key={name} value={name} disabled={!filter && !active}>
-          {name}
-          {!active && " (archived)"}
-        </option>
-      ))}
+      {options
+        .filter((model) => !filter || model.active)
+        .map(({ name, active }) => (
+          <option key={name} value={name} disabled={!filter && !active}>
+            {name}
+            {!active && " (archived)"}
+          </option>
+        ))}
     </select>
   );
 }

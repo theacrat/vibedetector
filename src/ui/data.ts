@@ -24,7 +24,8 @@ const loadDashboard = createServerFn({ method: "GET" })
     const { readDashboard, readModels } = await import("@/server/reports");
     const models = await readModels(data.id);
     const model =
-      data.model === "unspecified" || models.some((entry) => entry.name === data.model)
+      data.model === "unspecified" ||
+      models.some((entry) => entry.active && entry.name === data.model)
         ? data.model
         : "";
     return readDashboard(data.id, data.range, model);

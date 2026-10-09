@@ -170,3 +170,105 @@ test("expired authentication returns focus to the key input", async ({ page }) =
   await expect(page.getByLabel("Administrator key")).toBeFocused();
   await expect(page.getByRole("alert")).toHaveText("Session expired.");
 });
+
+test("provider order includes archived rows, persists after reload and retains movement focus", async ({
+  page,
+}) => {
+  let models = [
+    { active: true, name: "First model", provider: "claude" },
+    { active: false, name: "Archived model", provider: "claude" },
+    { active: true, name: "Last model", provider: "claude" },
+    { active: true, name: "Other provider model", provider: "chatgpt" },
+  ];
+  const writes: unknown[] = [];
+  await page.route("**/api/admin/**", async (route) => {
+    if (route.request().url().endsWith("/order")) {
+      const body: unknown = route.request().postDataJSON();
+      if (
+        typeof body !== "object" ||
+        body === null ||
+        !("provider" in body) ||
+        !("names" in body) ||
+        !Array.isArray(body.names) ||
+        !body.names.every((name: unknown) => typeof name === "string")
+      ) {
+        throw new Error("Expected a complete model order.");
+      }
+      const { provider } = body;
+      writes.push(body);
+      const ordered = body.names.flatMap((name) =>
+        models.filter((model) => model.provider === provider && model.name === name),
+      );
+      models = [...ordered, ...models.filter((model) => model.provider !== provider)];
+      await route.fulfill({ json: { ok: true } });
+      return;
+    }
+    await route.fulfill({ json: models });
+  });
+  await page.goto("/admin");
+  const rows = page.locator(".admin-models b");
+  await expect(rows).toHaveText(["First model", "Archived model", "Last model"]);
+  await expect(page.getByRole("button", { name: "Move up First model" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Move down Last model" })).toBeDisabled();
+  const down = page.getByRole("button", { name: "Move down First model" });
+  await down.click();
+  await expect(rows).toHaveText(["Archived model", "First model", "Last model"]);
+  await expect(down).toBeFocused();
+  expect(writes).toEqual([
+    { names: ["Archived model", "First model", "Last model"], provider: "claude" },
+  ]);
+  await down.click();
+  await expect(rows).toHaveText(["Archived model", "Last model", "First model"]);
+  await expect(down).toBeDisabled();
+  const up = page.getByRole("button", { name: "Move up First model" });
+  await expect(up).toBeFocused();
+  await up.press("Enter");
+  await expect(rows).toHaveText(["Archived model", "First model", "Last model"]);
+  await expect(up).toBeFocused();
+  await page.reload();
+  await expect(rows).toHaveText(["Archived model", "First model", "Last model"]);
+  await page.getByLabel("Provider").selectOption("chatgpt");
+  await expect(rows).toHaveText(["Other provider model"]);
+  await expect(page.getByRole("button", { name: "Move up Other provider model" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Move down Other provider model" })).toBeDisabled();
+});
+
+test("reorder waits for the authoritative catalogue and errors do not move rows", async ({
+  page,
+}) => {
+  const models = [
+    { active: true, name: "First model", provider: "claude" },
+    { active: true, name: "Middle model", provider: "claude" },
+    { active: false, name: "Last model", provider: "claude" },
+  ];
+  const { promise: responseGate, resolve: release } = Promise.withResolvers<undefined>();
+  let rejectOrder = true;
+  await page.route("**/api/admin/**", async (route) => {
+    if (route.request().url().endsWith("/order")) {
+      await responseGate;
+      await route.fulfill(
+        rejectOrder
+          ? { json: { error: "Could not save model order." }, status: 503 }
+          : { json: { ok: true } },
+      );
+      return;
+    }
+    await route.fulfill({ json: rejectOrder ? models : [models[2], models[0], models[1]] });
+  });
+  await page.goto("/admin");
+  const rows = page.locator(".admin-models b");
+  const down = page.getByRole("button", { name: "Move down First model" });
+  await down.click();
+  await expect(down).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Move up Middle model" })).toBeDisabled();
+  await expect(rows).toHaveText(["First model", "Middle model", "Last model"]);
+  release(undefined);
+  await expect(page.getByRole("alert")).toHaveText("Could not save model order.");
+  await expect(rows).toHaveText(["First model", "Middle model", "Last model"]);
+  await expect(down).toBeFocused();
+  rejectOrder = false;
+  await down.click();
+  await expect(rows).toHaveText(["Last model", "First model", "Middle model"]);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(down).toBeFocused();
+});
