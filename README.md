@@ -23,6 +23,8 @@ Model reporting is optional. The database catalogue supplies available models; `
 
 Open `/admin` to add, archive/reactivate or reorder models. Move up/down controls save one order per provider. Archived models are hidden from public choices and named graph filters; stored reports still contribute to provider-wide activity until normal retention expires them. Names cannot be renamed or deleted. Set `ADMIN_KEY` as a Worker secret with at least 32 randomly generated characters, not a memorable password. Never put it in Wrangler vars or commit it. The panel is disabled if the secret or admin rate limiter is missing.
 
+Catalogues support up to 256 names per provider. New names append at the end; reorder controls persist immediately and affect both reporting and graph selectors.
+
 For local development, use an ignored `.dev.vars` file containing a test-only `ADMIN_KEY`. Production uses Wrangler's protected secret input. Key entry exchanges the key for a one-hour HttpOnly session; the panel never stores it in localStorage or URL parameters. Rotate the key to revoke existing sessions. The initial migration uses INSERT OR IGNORE; deployments do not reset your catalogue edits.
 
 ## Gates
