@@ -201,10 +201,12 @@ function ChartStats({ model }: { model: ChartModel }) {
         <span>Peak</span>
         <b>{peak.toLocaleString("en-GB")}</b>
       </div>
-      <div>
-        <span>vs. normal</span>
-        <b>{ratio === undefined ? "—" : `${ratio.toFixed(1)}×`}</b>
-      </div>
+      {!model.filter && (
+        <div>
+          <span>vs. normal</span>
+          <b>{ratio === undefined ? "—" : `${ratio.toFixed(1)}×`}</b>
+        </div>
+      )}
     </div>
   );
 }

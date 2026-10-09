@@ -76,6 +76,7 @@ describe("community reports chart", () => {
     expect(html).toContain("Peak 8. Most reported slow.");
     expect(html).not.toContain('class="baseline"');
     expect(html).not.toContain("2.0×");
+    expect(html).not.toContain("vs. normal");
     expect(html).toContain("Filtered reports; provider verdict uses all models.");
     expect(html).toContain('<option value="Claude Opus 5.5" selected="">');
   });

@@ -86,21 +86,21 @@ function useProviderData() {
   return { dashboard, overview, refreshError };
 }
 
-function useProviderRange() {
+function useProviderFilters() {
   const navigate = Route.useNavigate();
   const [changing, setChanging] = useState(false);
-  const [rangeError, setRangeError] = useState("");
-  const changeRange = useCallback(
+  const [filterError, setFilterError] = useState("");
+  const changeFilters = useCallback(
     async (selection: { range?: Range; model?: string }) => {
       setChanging(true);
-      setRangeError("");
+      setFilterError("");
       try {
         await navigate({
           resetScroll: false,
           search: (previous) => ({ ...previous, ...selection }),
         });
       } catch {
-        setRangeError("Could not load those reports. Please try again.");
+        setFilterError("Could not load those reports. Please try again.");
       }
       setChanging(false);
     },
@@ -108,17 +108,17 @@ function useProviderRange() {
   );
   const selectRange = useCallback(
     (range: Range) => {
-      void changeRange({ range });
+      void changeFilters({ range });
     },
-    [changeRange],
+    [changeFilters],
   );
   const selectModel = useCallback(
     (model: string) => {
-      void changeRange({ model });
+      void changeFilters({ model });
     },
-    [changeRange],
+    [changeFilters],
   );
-  return { changing, rangeError, selectModel, selectRange };
+  return { changing, filterError, selectModel, selectRange };
 }
 
 function ProviderHero({ dashboard }: { dashboard: Dashboard }) {
@@ -170,7 +170,7 @@ function ProviderHero({ dashboard }: { dashboard: Dashboard }) {
 
 function ProviderPage() {
   const { dashboard, overview, refreshError } = useProviderData();
-  const { changing, rangeError, selectRange, selectModel } = useProviderRange();
+  const { changing, filterError, selectRange, selectModel } = useProviderFilters();
   const { provider } = dashboard;
   const otherProviders = useMemo(
     () => overview.filter((entry) => entry.provider.id !== provider.id),
@@ -182,9 +182,9 @@ function ProviderPage() {
         <ProviderHero dashboard={dashboard} />
         <Report id={provider.id} key={provider.id} />
       </section>
-      {(rangeError || refreshError) && (
+      {(filterError || refreshError) && (
         <p role="alert" className="error">
-          {rangeError || refreshError}
+          {filterError || refreshError}
         </p>
       )}
       <Chart dashboard={dashboard} onRange={selectRange} onModel={selectModel} pending={changing} />
