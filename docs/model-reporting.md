@@ -2,6 +2,8 @@
 
 Reports remain provider-level contributions. Add nullable model metadata from a hardcoded provider-specific list. Default `AI` means no model specified, not a guessed model. Heading becomes `My [AI/model selector] feels...`. Selecting a model changes the next report intent; it does not write until a category is submitted. Preserve model metadata across reloads and category changes; undo clears a report's active contribution. One contribution per browser/provider/hour still applies, regardless of model.
 
+Tapping the saved category with a different selected model updates metadata, not undo. Only the same category and same saved model toggles retraction. Cancelled verification must leave the persisted report untouched; the selected draft may remain for a subsequent attempt.
+
 Add `/zai` (Z.AI) and `/kimi` (Kimi) to the shared provider registry, homepage, other-provider links, sitemap and logos. Existing providers and URLs stay stable. Hardcoded model lists are UI labels, not an assertion of live availability.
 
 Initial model labels are curated from the models.dev catalogue checked during implementation. Kimi links to Moonshot's official `status.moonshot.cn`. No verified Z.AI status page was found, so link its website as a website, not an official status claim.
