@@ -1,7 +1,7 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 
-import { findProvider, isRange, isModelFilter } from "@/domain";
+import { findProvider, isRange } from "@/domain";
 import type { Dashboard, Overview, Range } from "@/domain";
 import { Chart } from "@/ui/chart";
 import { loadDashboard, loadOverview, requestJson } from "@/ui/data";
@@ -36,7 +36,17 @@ const Route = createFileRoute("/$provider")({
       // oxlint-disable-next-line typescript/only-throw-error
       throw notFound();
     }
-    if (!isModelFilter(provider.id, deps.model)) {
+    const [dashboard, overview] = await Promise.all([
+      loadDashboard({
+        data: {
+          id: provider.id,
+          model: deps.model.length <= 120 ? deps.model : "",
+          range: deps.range,
+        },
+      }),
+      loadOverview(),
+    ]);
+    if (dashboard.model !== deps.model) {
       // TanStack Router handles redirects as typed sentinels.
       // oxlint-disable-next-line typescript/only-throw-error
       throw redirect({
@@ -46,10 +56,6 @@ const Route = createFileRoute("/$provider")({
         to: "/$provider",
       });
     }
-    const [dashboard, overview] = await Promise.all([
-      loadDashboard({ data: { id: provider.id, model: deps.model, range: deps.range } }),
-      loadOverview(),
-    ]);
     return { dashboard, overview };
   },
   loaderDeps: ({ search }) => ({ model: search.model ?? "", range: search.range }),

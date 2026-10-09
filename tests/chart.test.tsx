@@ -17,6 +17,7 @@ const empty: Dashboard = {
   ],
   hourly: 0,
   model: "",
+  models: [{ active: true, name: "Claude Opus 5.5", provider: "chatgpt" }],
   provider: providers[0],
   range: "24h",
   verdict: "insufficient community data",

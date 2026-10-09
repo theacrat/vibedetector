@@ -1,0 +1,77 @@
+.admin {
+  max-width: 760px;
+  padding-block: 48px;
+}
+.admin h1 {
+  margin-bottom: 32px;
+}
+.admin-panel {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 24px;
+  background: var(--ink-2);
+}
+.admin-panel form,
+form.admin-panel {
+  display: grid;
+  gap: 12px;
+}
+.admin-panel h2,
+.admin-panel p {
+  margin: 0 0 16px;
+}
+.admin-panel input,
+.admin-panel select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 10px;
+  font: inherit;
+}
+.admin-panel button {
+  min-height: 44px;
+  cursor: pointer;
+}
+.admin-panel button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.admin-panel :focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: 4px;
+}
+.admin-panel form + p {
+  margin-top: 24px;
+  color: var(--muted);
+}
+.admin-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.admin-heading h2 {
+  margin: 0;
+}
+.admin-models {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.admin-models li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+.admin-models small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+}

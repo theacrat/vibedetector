@@ -1,5 +1,5 @@
 import { Funnel, Hourglass, Zap } from "lucide-react";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { Button, Dialog, Heading, Modal, ModalOverlay } from "react-aria-components";
 
 import { categories } from "@/domain";
@@ -117,6 +117,7 @@ function reportSelectionHint(state: ReportState) {
     : "Choose a category to save the new model to your report.";
 }
 
+// oxlint-disable-next-line eslint/max-lines-per-function
 function Report({ id }: { id: ProviderId }) {
   const state = useReportState();
   useReportWindow(id, state);
@@ -140,13 +141,22 @@ function Report({ id }: { id: ProviderId }) {
     },
     [stage],
   );
+  const options = useMemo(() => {
+    const models = [...(session?.models ?? [])];
+    for (const name of [session?.model, state.selectedModel]) {
+      if (name && !models.some((model) => model.name === name)) {
+        models.push({ active: false, name, provider: id });
+      }
+    }
+    return models;
+  }, [session, id, state.selectedModel]);
 
   return (
     <section className="report" aria-labelledby="feels">
       <h2 id="feels">
         {"My "}
         <ModelSelect
-          id={id}
+          options={options}
           value={state.selectedModel ?? ""}
           onChange={selectModel}
           disabled={pending || !session}

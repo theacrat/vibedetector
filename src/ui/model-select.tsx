@@ -1,19 +1,18 @@
 import { useCallback } from "react";
 import type { ChangeEvent } from "react";
 
-import { providerModels } from "@/domain";
-import type { ProviderId } from "@/domain";
+import type { ModelOption } from "@/domain";
 
 import "./model-select.css";
 
 function ModelSelect({
-  id,
+  options,
   value,
   onChange,
   disabled,
   filter = false,
 }: {
-  id: ProviderId;
+  options: ModelOption[];
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
@@ -35,9 +34,10 @@ function ModelSelect({
     >
       <option value="">{filter ? "All models" : "AI"}</option>
       {filter && <option value="unspecified">Unspecified</option>}
-      {providerModels[id].map((name) => (
-        <option key={name} value={name}>
+      {options.map(({ name, active }) => (
+        <option key={name} value={name} disabled={!filter && !active}>
           {name}
+          {!active && " (archived)"}
         </option>
       ))}
     </select>

@@ -1,13 +1,14 @@
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState, useCallback } from "react";
 
-import type { Category, ProviderId } from "@/domain";
+import type { Category, ModelOption, ProviderId } from "@/domain";
 
 import { requestJson, RequestError } from "./data";
 import { reportingWindowDelay } from "./report-window";
 import { loadTurnstile, mountWidget } from "./turnstile";
 
 interface Session {
+  models: ModelOption[];
   category: Category | null;
   model: string | null;
   siteKey: string;
@@ -28,7 +29,7 @@ async function readSession(id: ProviderId, signal?: AbortSignal) {
   }
   // Older session responses omit optional model metadata.
   // oxlint-disable-next-line unicorn/no-null
-  return { ...session, model: session.model ?? null };
+  return { ...session, model: session.model ?? null, models: session.models ?? [] };
 }
 
 function useReportState() {
@@ -108,12 +109,10 @@ function useReportWindow(id: ProviderId, state: ReportState) {
       return;
     }
     const controller = new AbortController();
-    const timer = globalThis.setTimeout(
-      () => {
-        void refreshWindow(controller.signal);
-      },
-      reportingWindowDelay(session.window, Date.now()),
-    );
+    const delay = Math.min(60_000, reportingWindowDelay(session.window, Date.now()));
+    const timer = globalThis.setTimeout(() => {
+      void refreshWindow(controller.signal);
+    }, delay);
     return () => {
       globalThis.clearTimeout(timer);
       controller.abort();
@@ -278,6 +277,15 @@ function useReportMutation(id: ProviderId, state: ReportState) {
       if (!session || intent) {
         return;
       }
+      const retracting = session.category === category && session.model === selectedModel;
+      if (
+        !retracting &&
+        selectedModel &&
+        !session.models.some((model) => model.name === selectedModel && model.active)
+      ) {
+        setReportError("This model is archived. Choose an active model for a new report.");
+        return;
+      }
       setReportError("");
       setFeedback("");
       setPhase("verifying");
@@ -285,7 +293,7 @@ function useReportMutation(id: ProviderId, state: ReportState) {
       setIntent({
         category:
           // oxlint-disable-next-line unicorn/no-null
-          session.category === category && session.model === selectedModel ? null : category,
+          retracting ? null : category,
         model: selectedModel,
         session,
       });

@@ -168,7 +168,7 @@ function useChartModel(dashboard: Dashboard, onRange: (range: Range) => void) {
     element,
     filter: dashboard.model,
     hovered,
-    providerId: dashboard.provider.id,
+    models: dashboard.models ?? [],
     uid,
   };
 }

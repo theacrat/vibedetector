@@ -102,3 +102,45 @@ for (const model of ["invented-model", "GLM-5.3"]) {
     await expect(page).not.toHaveURL(new RegExp(encodeURIComponent(model), "u"));
   });
 }
+
+test("catalogue refresh preserves a draft and archived saved reports can still be undone", async ({
+  page,
+}) => {
+  let refreshed = false;
+  await page.route("**/api/session/claude", async (route) => {
+    await route.fulfill({
+      json: {
+        category: "slow",
+        model: "Saved archived model",
+        models: [
+          {
+            active: true,
+            name: refreshed ? "New active model" : "Draft model",
+            provider: "claude",
+          },
+        ],
+        siteKey: "test-site-key",
+        window: Math.floor(Date.now() / 3_600_000),
+      },
+    });
+  });
+  await page.goto("/claude");
+  const select = page.getByRole("combobox", { exact: true, name: "Report model" });
+  await expect(select).toHaveValue("Saved archived model");
+  await expect(select.locator('option[value="Saved archived model"]')).toBeDisabled();
+  await page.getByRole("button", { name: /^slow/iu }).click();
+  await expect(page.getByText("Verifying before removing your report.")).toBeVisible();
+  await page.getByRole("button", { exact: true, name: "Cancel" }).click();
+  await select.selectOption("Draft model");
+  await page.clock.install();
+  refreshed = true;
+  await page.clock.fastForward(60_001);
+  await expect(select.locator('option[value="New active model"]')).toHaveCount(1);
+  await expect(select).toHaveValue("Draft model");
+  await expect(select.locator('option[value="Draft model"]')).toBeDisabled();
+  await page.getByRole("button", { name: /^broken/iu }).click();
+  await expect(page.getByRole("alert")).toHaveText(
+    "This model is archived. Choose an active model for a new report.",
+  );
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});

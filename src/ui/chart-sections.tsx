@@ -19,12 +19,12 @@ function textAnchor(tick: number) {
 }
 
 function ChartHead({ model }: { model: ChartModel }) {
-  const { range, handleRangeActions, pending, filter, providerId, onModel } = model;
+  const { range, handleRangeActions, pending, filter, models, onModel } = model;
   return (
     <div className="chart-head">
       <h3>Reports</h3>
       <div className="chart-controls">
-        <ModelSelect id={providerId} value={filter} onChange={onModel} disabled={pending} filter />
+        <ModelSelect options={models} value={filter} onChange={onModel} disabled={pending} filter />
         <fieldset className="ranges" aria-label="Time range">
           {(["6h", "24h", "7d"] as const).map((value) => (
             <Button
