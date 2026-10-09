@@ -7,31 +7,40 @@ import type { AdminState } from "./admin-data";
 import { useCatalogueOrder } from "./catalogue-order";
 
 function ModelRename({ model, state }: { model: ModelOption; state: AdminState }) {
+  const [name, setName] = useState<string>();
   const submit = useCallback(
-    (event: SubmitEvent<HTMLFormElement>) => {
+    async (event: SubmitEvent<HTMLFormElement>) => {
       event.preventDefault();
-      const fields = new FormData(event.currentTarget);
-      const name = fields.get("name");
-      if (typeof name !== "string") {
-        return;
-      }
-      void state.run("/api/admin/models/update", {
+      const saved = await state.run("/api/admin/models/update", {
         id: model.id,
-        name: name.trim(),
+        name: (name ?? model.name).trim(),
       });
+      if (saved) {
+        setName(undefined);
+      }
     },
-    [model.id, state],
+    [model.id, model.name, name, state],
+  );
+  const changeName = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    setName(event.currentTarget.value);
+  }, []);
+  const handleSubmit = useCallback(
+    (event: SubmitEvent<HTMLFormElement>) => {
+      void submit(event);
+    },
+    [submit],
   );
   return (
-    <form onSubmit={submit} className="admin-rename" key={model.name}>
+    <form onSubmit={handleSubmit} className="admin-rename">
       <label htmlFor={`model-name-${model.id}`}>Rename {model.name}</label>
       <input
         id={`model-name-${model.id}`}
         name="name"
-        defaultValue={model.name}
+        value={name ?? model.name}
         maxLength={120}
         required
         disabled={state.pending}
+        onChange={changeName}
       />
       <button
         id={`model-save-${model.id}`}
@@ -117,7 +126,7 @@ function AdminCatalogue({
         <h2 id="catalogue-title">Model catalogue</h2>
       </div>
       <details className="admin-add-model">
-        <summary>Add a model</summary>
+        <summary id="admin-add-model-summary">Add a model</summary>
         <form onSubmit={submit}>
           <label htmlFor="admin-model">Model name</label>
           <input

@@ -85,7 +85,11 @@ function ProviderListRow({ provider }: { provider: Provider }) {
 
 function ProviderList({ state }: { state: AdminState }) {
   const providers = useMemo(
-    () => state.providers.toSorted((left, right) => left.name.localeCompare(right.name, "en")),
+    () =>
+      state.providers.toSorted(
+        (left, right) =>
+          left.name.localeCompare(right.name, "en") || left.id.localeCompare(right.id),
+      ),
     [state.providers],
   );
   return (
