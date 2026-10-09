@@ -94,16 +94,6 @@ async function sessionReport(
   return row === null ? { category: null, model: null } : readSession(row, provider);
 }
 
-async function sessionCategory(
-  db: D1Database,
-  provider: ProviderId,
-  identity: string,
-  now: number,
-): Promise<Category | null> {
-  const report = await sessionReport(db, provider, identity, now);
-  return report.category;
-}
-
 async function loadReports(db: D1Database, provider: ProviderId, now: number): Promise<Report[]> {
   const result = await db
     .prepare(
@@ -134,5 +124,5 @@ async function retainReports(db: D1Database, now: number): Promise<void> {
     }
   }
 }
-export { HOUR, loadReports, retainReports, saveReport, sessionCategory, sessionReport };
+export { HOUR, loadReports, retainReports, saveReport, sessionReport };
 export type { Report };

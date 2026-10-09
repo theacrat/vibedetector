@@ -9,14 +9,7 @@ import { handleApi } from "@/server/api";
 import { dashboardFromDatabase } from "@/server/queries";
 import { browserIdentity, challengeConfig, readJson, verifyChallenge } from "@/server/security";
 import type { VerifyFetch } from "@/server/security";
-import {
-  HOUR,
-  loadReports,
-  retainReports,
-  saveReport,
-  sessionCategory,
-  sessionReport,
-} from "@/server/storage";
+import { HOUR, loadReports, retainReports, saveReport, sessionReport } from "@/server/storage";
 
 const runtimes: Miniflare[] = [];
 afterAll(async () => {
@@ -143,9 +136,9 @@ test("D1 atomic upsert retries preserve timestamps across switches and retractio
     { category: "slow", created_at: now, model: null },
   ]);
   // SQL NULL is the persisted retraction state, not an omitted parameter.
-  // oxlint-disable-next-line unicorn/no-null
   await saveReport(db, "claude", "hash", null, now + 2000);
-  expect(await sessionCategory(db, "claude", "hash", now)).toBeNull();
+  const retracted = await sessionReport(db, "claude", "hash", now);
+  expect(retracted.category).toBeNull();
   await saveReport(db, "claude", "hash", "broken", now + 3000);
   await saveReport(db, "claude", "hash", "slow", now + HOUR);
   expect(await loadReports(db, "claude", now + HOUR)).toEqual([
@@ -325,7 +318,6 @@ test("API persists reports and fails closed on challenge, rate-limit and databas
   const sessionBody: unknown = await session.json();
   // The session API uses JSON null for no active report.
   expect(sessionBody).toEqual({
-    // oxlint-disable-next-line unicorn/no-null
     category: null,
     model: null,
     siteKey: "1x00000000000000000000AA",
