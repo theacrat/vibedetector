@@ -9,6 +9,8 @@ Optional model reporting adds `/zai` and `/kimi`; their reports use the same pro
 
 `Provider` is a registry entry with slug, name, maker and official status URL. `Category` is `nerfed | slow | broken`. Reports have a provider, category, timestamp and anonymous browser identity. An opaque random HttpOnly cookie identifies a browser. One report per provider per browser per fixed hour. Retrying is idempotent, switching updates and undo removes. IP addresses are not stored in reports.
 
+Reports may include a provider-scoped model label as nullable metadata. Model selection does not create an additional contribution, change the deduplication window, or change provider verdict algorithms. Graph filters affect displayed category buckets only; provider totals and baselines remain unfiltered.
+
 `Dashboard` contains UTC-aligned buckets, hourly count, baseline and verdict. Ranges are 6h (15-minute buckets), 24h (30-minute buckets) and 7d (3-hour buckets). Insufficient history or volume means insufficient data, never good vibes.
 
 Include the partial boundary buckets needed to cover the full selected duration. Label the newest count as `since <device-local time>`, not a rolling count. Chart labels use the device timezone after hydration, while storage and aggregation remain UTC. The hero separately counts the actual trailing hour. Session responses identify their fixed reporting window; mutations reject stale windows so an hour rollover cannot falsely undo an earlier contribution.
