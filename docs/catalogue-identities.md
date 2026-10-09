@@ -14,6 +14,8 @@ Migration must fail rather than silently drop an unmapped report/model. Verify s
 
 Public overview/SSR loads active providers from D1. Resolve public page paths by slug; API UUID lookup may be accepted internally but public routes remain slug-based. Public catalogue/UI parsers validate UUIDs and returned shapes. Generic display-name validation replaces fixed allowlists. Admin authentication/Turnstile/report protections and provider-only anomaly algorithm remain unchanged.
 
+The panel should expose read-only IDs only as identifiers, not editable fields. Model labels in selectors update after rename without changing selected UUIDs. Provider logo lookup uses its editable logo field rather than constructing a path from its UUID. Dynamic sitemap must include active canonical slugs, not seeded names.
+
 The user authorises a fundamental production reset for the current vibedetector Worker and its dedicated database only. Prefer a new dedicated database and a controlled Worker cutover over deleting unrelated resources. Preserve the existing admin key in 1Password and Turnstile widget. Capture current provider/model catalogue and seed it into the replacement so admin edits are not lost. Do not delete the old dedicated database until new deployment and live smoke checks succeed; obsolete database deletion is within the authorised current-service scope. Do not touch the older unrelated database named vibedetector.
 
 Verify UUID rename stability, provider creation/archival/order, reserved/duplicate slugs, cross-provider model rejection, ID-based filters/report restoration, migrations and dynamic sitemap, archived visibility, auth/CSRF and full UI gates. Independent standards/spec reviews before merge. Production cutover only after those gates.
