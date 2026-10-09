@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { findProvider, isRange } from "@/domain";
+import { findProvider, isRange, isModelFilter } from "@/domain";
 import type { ProviderId, Range } from "@/domain";
 
 const loadOverview = createServerFn({ method: "GET" }).handler(async () => {
@@ -9,15 +9,15 @@ const loadOverview = createServerFn({ method: "GET" }).handler(async () => {
 });
 
 const loadDashboard = createServerFn({ method: "GET" })
-  .validator((input: { id: ProviderId; range: Range }) => {
-    if (!findProvider(input.id) || !isRange(input.range)) {
-      throw new Error("Invalid provider or range.");
+  .validator((input: { id: ProviderId; range: Range; model: string }) => {
+    if (!findProvider(input.id) || !isRange(input.range) || !isModelFilter(input.id, input.model)) {
+      throw new Error("Invalid provider, range or model.");
     }
     return input;
   })
   .handler(async ({ data }) => {
     const { readDashboard } = await import("@/server/reports");
-    return readDashboard(data.id, data.range);
+    return readDashboard(data.id, data.range, data.model);
   });
 
 class RequestError extends Error {

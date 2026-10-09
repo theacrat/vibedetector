@@ -1,0 +1,53 @@
+.model-select {
+  max-width: 100%;
+  padding: 4px 22px 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--paper);
+  font: inherit;
+  cursor: pointer;
+}
+
+.model-select:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+.model-select:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.model-filter {
+  font-size: 13px;
+}
+
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.report h2 .model-select {
+  max-width: min(100%, 280px);
+}
+
+@media (max-width: 560px) {
+  .chart-head {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .chart-controls {
+    justify-content: flex-start;
+  }
+
+  .report h2 .model-select {
+    max-width: 210px;
+    font-size: 0.8em;
+  }
+}

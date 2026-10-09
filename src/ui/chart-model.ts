@@ -37,7 +37,10 @@ function chartLayers(
 }
 
 function chartGeometry(dashboard: Dashboard, width: number) {
-  const { buckets, range, baseline } = dashboard;
+  const { buckets, range, model } = dashboard;
+  // Filtered graphs cannot use the provider-wide historical baseline.
+  // oxlint-disable-next-line unicorn/no-null
+  const baseline = model ? null : dashboard.baseline;
   const totals = buckets.map((bucket) => bucket.nerfed + bucket.slow + bucket.broken);
   const peak = Math.max(0, ...totals);
   const max = Math.max(4, Math.ceil((peak * 1.1) / 4) * 4);
@@ -50,7 +53,6 @@ function chartGeometry(dashboard: Dashboard, width: number) {
   );
   const top = categories[sums.indexOf(Math.max(...sums))];
   const topLabel = peak === 0 ? "—" : top;
-  const last = totals.at(-1) ?? 0;
   const ratio = baseline !== null && baseline > 0 ? dashboard.hourly / baseline : undefined;
   const bucketBaseline =
     baseline === null ? undefined : (baseline * ranges[range].step) / 3_600_000;
@@ -60,7 +62,6 @@ function chartGeometry(dashboard: Dashboard, width: number) {
     bucketBaseline,
     buckets,
     height,
-    last,
     layers,
     max,
     peak,
@@ -161,10 +162,21 @@ function useChartModel(dashboard: Dashboard, onRange: (range: Range) => void) {
   const geometry = chartGeometry(dashboard, width);
   const { buckets, peak, top } = geometry;
   const interaction = useChartInteraction(onRange, width, buckets, hovered, setHovered, peak, top);
-  return { ...geometry, ...interaction, asOf: dashboard.asOf, element, hovered, uid };
+  return {
+    ...geometry,
+    ...interaction,
+    element,
+    filter: dashboard.model,
+    hovered,
+    providerId: dashboard.provider.id,
+    uid,
+  };
 }
 
-type ChartModel = ReturnType<typeof useChartModel> & { pending: boolean };
+type ChartModel = ReturnType<typeof useChartModel> & {
+  pending: boolean;
+  onModel: (model: string) => void;
+};
 
 export { useChartModel, colors, categoryStyles };
 export type { ChartModel };

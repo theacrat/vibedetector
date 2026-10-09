@@ -1,7 +1,7 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
+import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 
-import { findProvider, isRange } from "@/domain";
+import { findProvider, isRange, isModelFilter } from "@/domain";
 import type { Dashboard, Overview, Range } from "@/domain";
 import { Chart } from "@/ui/chart";
 import { loadDashboard, loadOverview, requestJson } from "@/ui/data";
@@ -28,7 +28,7 @@ const Route = createFileRoute("/$provider")({
     deps,
   }: {
     params: { provider: string };
-    deps: { range: Range };
+    deps: { range: Range; model: string };
   }): Promise<{ dashboard: Dashboard; overview: Overview[] }> => {
     const provider = findProvider(params.provider);
     if (!provider) {
@@ -36,14 +36,25 @@ const Route = createFileRoute("/$provider")({
       // oxlint-disable-next-line typescript/only-throw-error
       throw notFound();
     }
+    if (!isModelFilter(provider.id, deps.model)) {
+      // TanStack Router handles redirects as typed sentinels.
+      // oxlint-disable-next-line typescript/only-throw-error
+      throw redirect({
+        params: { provider: provider.id },
+        replace: true,
+        search: { model: "", range: deps.range },
+        to: "/$provider",
+      });
+    }
     const [dashboard, overview] = await Promise.all([
-      loadDashboard({ data: { id: provider.id, range: deps.range } }),
+      loadDashboard({ data: { id: provider.id, model: deps.model, range: deps.range } }),
       loadOverview(),
     ]);
     return { dashboard, overview };
   },
-  loaderDeps: ({ search }) => ({ range: search.range }),
-  validateSearch: (search: Record<string, unknown>): { range: Range } => ({
+  loaderDeps: ({ search }) => ({ model: search.model ?? "", range: search.range }),
+  validateSearch: (search: Record<string, unknown>): { range: Range; model?: string } => ({
+    model: typeof search["model"] === "string" ? search["model"] : "",
     range:
       typeof search["range"] === "string" && isRange(search["range"]) ? search["range"] : "24h",
   }),
@@ -61,7 +72,7 @@ function useProviderData() {
     const snapshot = latest.current;
     const [nextDashboard, nextOverview] = await Promise.all([
       requestJson<Dashboard>(
-        `/api/providers/${snapshot.dashboard.provider.id}?range=${snapshot.dashboard.range}`,
+        `/api/providers/${snapshot.dashboard.provider.id}?range=${snapshot.dashboard.range}&model=${encodeURIComponent(snapshot.dashboard.model)}`,
       ),
       requestJson<Overview[]>("/api/overview"),
     ]);
@@ -80,13 +91,16 @@ function useProviderRange() {
   const [changing, setChanging] = useState(false);
   const [rangeError, setRangeError] = useState("");
   const changeRange = useCallback(
-    async (range: Range) => {
+    async (selection: { range?: Range; model?: string }) => {
       setChanging(true);
       setRangeError("");
       try {
-        await navigate({ resetScroll: false, search: { range } });
+        await navigate({
+          resetScroll: false,
+          search: (previous) => ({ ...previous, ...selection }),
+        });
       } catch {
-        setRangeError("Could not load that range. Please try again.");
+        setRangeError("Could not load those reports. Please try again.");
       }
       setChanging(false);
     },
@@ -94,11 +108,17 @@ function useProviderRange() {
   );
   const selectRange = useCallback(
     (range: Range) => {
-      void changeRange(range);
+      void changeRange({ range });
     },
     [changeRange],
   );
-  return { changing, rangeError, selectRange };
+  const selectModel = useCallback(
+    (model: string) => {
+      void changeRange({ model });
+    },
+    [changeRange],
+  );
+  return { changing, rangeError, selectModel, selectRange };
 }
 
 function ProviderHero({ dashboard }: { dashboard: Dashboard }) {
@@ -139,8 +159,9 @@ function ProviderHero({ dashboard }: { dashboard: Dashboard }) {
           {" issue reports this hour."}
         </p>
         <a className="status-link" href={provider.status} target="_blank" rel="noopener noreferrer">
-          {provider.maker}
-          {" official status"}
+          {"statusLabel" in provider && typeof provider.statusLabel === "string"
+            ? provider.statusLabel
+            : `${provider.maker} official status`}
         </a>
       </div>
     </div>
@@ -149,7 +170,7 @@ function ProviderHero({ dashboard }: { dashboard: Dashboard }) {
 
 function ProviderPage() {
   const { dashboard, overview, refreshError } = useProviderData();
-  const { changing, rangeError, selectRange } = useProviderRange();
+  const { changing, rangeError, selectRange, selectModel } = useProviderRange();
   const { provider } = dashboard;
   const otherProviders = useMemo(
     () => overview.filter((entry) => entry.provider.id !== provider.id),
@@ -166,7 +187,7 @@ function ProviderPage() {
           {rangeError || refreshError}
         </p>
       )}
-      <Chart dashboard={dashboard} onRange={selectRange} pending={changing} />
+      <Chart dashboard={dashboard} onRange={selectRange} onModel={selectModel} pending={changing} />
       <section className="elsewhere">
         <h2>Other AIs</h2>
         <ProviderGrid overview={otherProviders} />

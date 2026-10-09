@@ -8,14 +8,16 @@ import { ChartHead, ChartSvg, ChartTip, ChartStats } from "./chart-sections";
 function Chart({
   dashboard,
   onRange,
+  onModel,
   pending,
 }: {
   dashboard: Dashboard;
   onRange: (range: Range) => void;
+  onModel: (model: string) => void;
   pending: boolean;
 }) {
   const chart = useChartModel(dashboard, onRange);
-  const model = useMemo(() => ({ ...chart, pending }), [chart, pending]);
+  const model = useMemo(() => ({ ...chart, onModel, pending }), [chart, pending, onModel]);
   const { element, moveChart, leaveChart, baseline } = model;
   return (
     <section className="chart-card" aria-label="Community reports">
@@ -27,11 +29,12 @@ function Chart({
       <ChartStats model={model} />
       <p className="chart-note">
         {"Times shown in your local timezone. "}
-        {baseline === null ? (
+        {dashboard.model &&
+          "Filtered reports; provider verdict uses all models. Hourly totals also use all models."}
+        {!dashboard.model && baseline === null && (
           <a href="/methodology">How much data is enough?</a>
-        ) : (
-          "Dashed line shows the historical baseline."
         )}
+        {!dashboard.model && baseline !== null && "Dashed line shows the historical baseline."}
       </p>
     </section>
   );
