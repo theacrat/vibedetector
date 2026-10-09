@@ -21,3 +21,5 @@ Invalid or cross-provider filters are rejected at the API/server boundary and no
 Remove the chart's entire `x reports since time` line. Keep range controls and add an accessible model filter. Retain local-time axes/tooltips and challenge UX.
 
 Verify migration preserves old rows, model validation, persistence/change/undo, provider-only verdict invariance for every filter, shareable model/range URLs, new provider paths, anti-bot gates and mobile selectors. Run local gates and independent standards/spec reviews before merge. Do not deploy or migrate production without release approval.
+
+Backend verification uses actual Miniflare D1. Tests assert literal identical totals, baselines and each verdict severity for all/unspecified/named filters, and confirm existing dedup keys and indexes survive the migration. No new probe, confidence metric or model-level verdict is introduced.
