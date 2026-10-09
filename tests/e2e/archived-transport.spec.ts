@@ -20,11 +20,13 @@ test("real archived D1 entries are excluded from SSR and server-function transpo
 }, testInfo) => {
   const name = `Archived transport ${testInfo.project.name}`;
   localSql(
-    `INSERT INTO models(provider,name,active,position) VALUES('kimi','${name}',1,999) ON CONFLICT(provider,name) DO UPDATE SET active=1`,
+    `INSERT INTO models(id,provider,name,active,position) VALUES('${crypto.randomUUID()}','10000000-0000-4000-8000-000000000010','${name}',1,999) ON CONFLICT(provider,name) DO UPDATE SET active=1`,
   );
   const active = await request.get("/api/models/kimi");
   expect(await active.text()).toContain(name);
-  localSql(`UPDATE models SET active=0 WHERE provider='kimi' AND name='${name}'`);
+  localSql(
+    `UPDATE models SET active=0 WHERE provider='10000000-0000-4000-8000-000000000010' AND name='${name}'`,
+  );
   const rendered = await request.get(`/kimi?model=${encodeURIComponent(name)}`);
   expect(await rendered.text()).not.toContain(name);
   await page.goto("/kimi");

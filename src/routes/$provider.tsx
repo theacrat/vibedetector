@@ -1,9 +1,9 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 
-import { findProvider, isRange } from "@/domain";
+import { isId, isRange } from "@/domain";
 import type { Dashboard, Overview, Range } from "@/domain";
-import { parseCatalogue } from "@/ui/catalogue-data";
+import { parseDashboard, parseOverview } from "@/ui/catalogue-data";
 import { Chart } from "@/ui/chart";
 import { loadDashboard, loadOverview, requestJson } from "@/ui/data";
 import { ProviderLogo } from "@/ui/provider-logo";
@@ -31,27 +31,27 @@ const Route = createFileRoute("/$provider")({
     params: { provider: string };
     deps: { range: Range; model: string };
   }): Promise<{ dashboard: Dashboard; overview: Overview[] }> => {
-    const provider = findProvider(params.provider);
+    const overview = await loadOverview();
+    const provider = overview.find(
+      (entry) => entry.provider.slug === params.provider && entry.provider.active,
+    )?.provider;
     if (!provider) {
       // TanStack Router handles its typed not-found sentinel, not an Error.
       // oxlint-disable-next-line typescript/only-throw-error
       throw notFound();
     }
-    const [dashboard, overview] = await Promise.all([
-      loadDashboard({
-        data: {
-          id: provider.id,
-          model: deps.model.length <= 120 ? deps.model : "",
-          range: deps.range,
-        },
-      }),
-      loadOverview(),
-    ]);
+    const dashboard = await loadDashboard({
+      data: {
+        id: provider.id,
+        model: isId(deps.model) || deps.model === "unspecified" ? deps.model : "",
+        range: deps.range,
+      },
+    });
     if (dashboard.model !== deps.model) {
       // TanStack Router handles redirects as typed sentinels.
       // oxlint-disable-next-line typescript/only-throw-error
       throw redirect({
-        params: { provider: provider.id },
+        params: { provider: provider.slug },
         replace: true,
         search: { model: "", range: deps.range },
         to: "/$provider",
@@ -78,15 +78,16 @@ function useProviderData() {
   const refreshError = usePublicRefresh(async () => {
     const snapshot = latest.current;
     const [nextDashboard, nextOverview] = await Promise.all([
-      requestJson<Dashboard>(
+      requestJson<unknown>(
         `/api/providers/${snapshot.dashboard.provider.id}?range=${snapshot.dashboard.range}&model=${encodeURIComponent(snapshot.dashboard.model)}`,
       ),
-      requestJson<Overview[]>("/api/overview"),
+      requestJson<unknown>("/api/overview"),
     ]);
-    const models = parseCatalogue(nextDashboard.models);
+    const parsedDashboard = parseDashboard(nextDashboard);
+    const parsedOverview = parseOverview(nextOverview);
     if (latest.current === snapshot) {
       setRefreshed({
-        data: { dashboard: { ...nextDashboard, models }, overview: nextOverview },
+        data: { dashboard: parsedDashboard, overview: parsedOverview },
         source: snapshot,
       });
     }

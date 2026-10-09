@@ -21,48 +21,50 @@ function sparkLine(buckets: Overview["buckets"]) {
 
 export function ProviderGrid({ overview }: { overview: Overview[] }) {
   const paramsById = useMemo(
-    () => new Map(overview.map(({ provider }) => [provider.id, { provider: provider.id }])),
+    () => new Map(overview.map(({ provider }) => [provider.id, { provider: provider.slug }])),
     [overview],
   );
   return (
     <div className="grid">
-      {overview.map(({ provider, hourly, buckets }) => {
-        const line = sparkLine(buckets);
-        const params = paramsById.get(provider.id);
-        if (!params) {
-          return;
-        }
+      {overview
+        .filter(({ provider }) => provider.active)
+        .map(({ provider, hourly, buckets }) => {
+          const line = sparkLine(buckets);
+          const params = paramsById.get(provider.id);
+          if (!params) {
+            return;
+          }
 
-        return (
-          <article className="card" key={provider.id}>
-            <Link
-              className="card-main"
-              to="/$provider"
-              params={params}
-              search={defaultSearch}
-              aria-label={`View ${provider.name} reports`}
-            >
-              <div className="card-top">
-                <ProviderLogo provider={provider} />
-                <b>{provider.name}</b>
-              </div>
-              <svg viewBox="0 0 200 44" preserveAspectRatio="none" aria-hidden="true">
-                <path
-                  d={line}
-                  fill="none"
-                  stroke="var(--muted)"
-                  strokeWidth="2"
-                  vectorEffect="non-scaling-stroke"
-                />
-              </svg>
-              <span className="card-count">
-                {hourly.toLocaleString("en-GB")}
-                {" reports this hour"}
-              </span>
-            </Link>
-          </article>
-        );
-      })}
+          return (
+            <article className="card" key={provider.id}>
+              <Link
+                className="card-main"
+                to="/$provider"
+                params={params}
+                search={defaultSearch}
+                aria-label={`View ${provider.name} reports`}
+              >
+                <div className="card-top">
+                  <ProviderLogo provider={provider} />
+                  <b>{provider.name}</b>
+                </div>
+                <svg viewBox="0 0 200 44" preserveAspectRatio="none" aria-hidden="true">
+                  <path
+                    d={line}
+                    fill="none"
+                    stroke="var(--muted)"
+                    strokeWidth="2"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                </svg>
+                <span className="card-count">
+                  {hourly.toLocaleString("en-GB")}
+                  {" reports this hour"}
+                </span>
+              </Link>
+            </article>
+          );
+        })}
     </div>
   );
 }

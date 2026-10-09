@@ -36,8 +36,8 @@ function ModelSelect({
       {filter && <option value="unspecified">Unspecified</option>}
       {options
         .filter((model) => !filter || model.active)
-        .map(({ name, active }) => (
-          <option key={name} value={name} disabled={!filter && !active}>
+        .map(({ id, name, active }) => (
+          <option key={id} value={id} disabled={!filter && !active}>
             {name}
             {!active && " (archived)"}
           </option>

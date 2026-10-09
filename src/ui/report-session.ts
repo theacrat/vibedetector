@@ -1,6 +1,7 @@
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState, useCallback } from "react";
 
+import { isId } from "@/domain";
 import type { Category, ModelOption, ProviderId } from "@/domain";
 
 import { parseCatalogue } from "./catalogue-data";
@@ -25,12 +26,10 @@ type ReportState = ReturnType<typeof useReportState>;
 
 async function readSession(id: ProviderId, signal?: AbortSignal) {
   const session = await requestJson<Session>(`/api/session/${id}`, signal ? { signal } : undefined);
-  if (!Number.isFinite(session.window)) {
+  if (!Number.isFinite(session.window) || (session.model !== null && !isId(session.model))) {
     throw new TypeError("Could not load the reporting window. Please try again.");
   }
-  // Older session responses omit optional model metadata.
-  // oxlint-disable-next-line unicorn/no-null
-  return { ...session, model: session.model ?? null, models: parseCatalogue(session.models ?? []) };
+  return { ...session, models: parseCatalogue(session.models) };
 }
 
 function useReportState() {
@@ -283,7 +282,7 @@ function useReportMutation(id: ProviderId, state: ReportState) {
       if (
         !retainingSavedModel &&
         selectedModel &&
-        !session.models.some((model) => model.name === selectedModel && model.active)
+        !session.models.some((model) => model.id === selectedModel && model.active)
       ) {
         setReportError("This model is archived. Choose an active model for a new report.");
         return;

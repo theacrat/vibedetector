@@ -4,7 +4,7 @@ test("concurrent verified requests retain one contribution in the local Worker",
   request,
 }, testInfo) => {
   const headers = {
-    Origin: "http://127.0.0.1:41873",
+    Origin: String(testInfo.project.use.baseURL),
     "cf-connecting-ip": testInfo.project.name === "desktop" ? "198.51.100.11" : "198.51.100.12",
   };
   const session = await request.get("/api/session/deepseek");

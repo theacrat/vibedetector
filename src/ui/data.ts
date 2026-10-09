@@ -1,17 +1,19 @@
 import { createServerFn } from "@tanstack/react-start";
 
-import { findProvider, isRange } from "@/domain";
+import { isId, isRange } from "@/domain";
 import type { ProviderId, Range } from "@/domain";
+
+import { parseDashboard, parseOverview } from "./catalogue-data";
 
 const loadOverview = createServerFn({ method: "GET" }).handler(async () => {
   const { readOverview } = await import("@/server/reports");
-  return readOverview();
+  return parseOverview(await readOverview());
 });
 
 const loadDashboard = createServerFn({ method: "GET" })
   .validator((input: { id: ProviderId; range: Range; model: string }) => {
     if (
-      !findProvider(input.id) ||
+      !isId(input.id) ||
       !isRange(input.range) ||
       typeof input.model !== "string" ||
       input.model.length > 120
@@ -22,7 +24,7 @@ const loadDashboard = createServerFn({ method: "GET" })
   })
   .handler(async ({ data }) => {
     const { readDashboard } = await import("@/server/reports");
-    return readDashboard(data.id, data.range, data.model);
+    return parseDashboard(await readDashboard(data.id, data.range, data.model));
   });
 
 class RequestError extends Error {
