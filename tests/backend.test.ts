@@ -1143,6 +1143,24 @@ test("admin order persists full provider permutations, rejects invalid requests 
   expect(appended.results.map((row) => row.position)).toEqual([0, 1, 2, 3, 4]);
 });
 
+test("competing complete orders leave one winning permutation without mixed positions", async () => {
+  const db = await database();
+  const catalogue = await loadModels(db, "claude");
+  const names = catalogue.map((model) => model.name);
+  const reversed = names.toReversed();
+  const rotated = [...names.slice(1), names[0]];
+  await Promise.all([
+    orderModels(db, { names: reversed, provider: "claude" }),
+    orderModels(db, { names: rotated, provider: "claude" }),
+  ]);
+  const result = await db
+    .prepare("SELECT name, position FROM models WHERE provider = 'claude' ORDER BY position")
+    .all<{ name: string; position: number }>();
+  const actual = result.results.map((row) => row.name);
+  expect([reversed, rotated]).toContainEqual(actual);
+  expect(result.results.map((row) => row.position)).toEqual(names.map((_name, index) => index));
+});
+
 test("large catalogue orders use the admin body limit and new models stop at 256", async () => {
   const db = await database();
   const bindings = adminBindings(db);

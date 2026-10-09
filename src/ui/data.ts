@@ -21,14 +21,8 @@ const loadDashboard = createServerFn({ method: "GET" })
     return input;
   })
   .handler(async ({ data }) => {
-    const { readDashboard, readModels } = await import("@/server/reports");
-    const models = await readModels(data.id);
-    const model =
-      data.model === "unspecified" ||
-      models.some((entry) => entry.active && entry.name === data.model)
-        ? data.model
-        : "";
-    return readDashboard(data.id, data.range, model);
+    const { readDashboard } = await import("@/server/reports");
+    return readDashboard(data.id, data.range, data.model);
   });
 
 class RequestError extends Error {
