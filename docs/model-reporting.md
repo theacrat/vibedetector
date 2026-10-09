@@ -1,6 +1,7 @@
 # Optional model reporting
 
 Runtime model lists now come from D1, not the initial hardcoded registry. `docs/model-admin.md` supersedes the hardcoded validation and append-only UI list implementation below. The user's edited names are preserved in `seeds/models.ts` and migration seed SQL.
+Archived models are now excluded from public graph choices and named filters, as specified in `docs/catalogue-ordering.md`; stored reports are not deleted.
 
 Reports remain provider-level contributions. Add nullable model metadata from a hardcoded provider-specific list. Default `AI` means no model specified, not a guessed model. Heading becomes `My [AI/model selector] feels...`. Selecting a model changes the next report intent; it does not write until a category is submitted. Preserve model metadata across reloads and category changes; undo clears a report's active contribution. One contribution per browser/provider/hour still applies, regardless of model.
 
