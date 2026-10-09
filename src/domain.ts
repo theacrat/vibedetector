@@ -9,6 +9,8 @@ const providers = [
   { id: "mistral", maker: "Mistral AI", name: "Mistral", status: "https://status.mistral.ai" },
   { id: "deepseek", maker: "DeepSeek", name: "DeepSeek", status: "https://status.deepseek.com" },
   { id: "cursor", maker: "Anysphere", name: "Cursor", status: "https://status.cursor.com" },
+  { id: "zai", maker: "Z.AI", name: "Z.AI", status: "https://status.z.ai" },
+  { id: "kimi", maker: "Moonshot AI", name: "Kimi", status: "https://status.moonshot.ai" },
 ] as const;
 type Provider = (typeof providers)[number];
 type ProviderId = Provider["id"];
@@ -25,6 +27,7 @@ interface Bucket {
   broken: number;
 }
 interface Dashboard {
+  model: string;
   provider: Provider;
   range: Range;
   buckets: Bucket[];
@@ -47,5 +50,67 @@ function isRange(value: string): value is Range {
 function isCategory(value: unknown): value is Category {
   return categories.some((category) => category === value);
 }
-export { categories, providers, ranges, findProvider, isRange, isCategory };
+const providerModels: Record<ProviderId, readonly string[]> = {
+  chatgpt: ["GPT-6.1 Sol", "GPT-6 Sol", "GPT-6 Luna", "GPT-5.6 Sol", "GPT-5.5", "GPT-5.4", "o3"],
+  claude: [
+    "Claude Opus 5.5",
+    "Claude Sonnet 5.5",
+    "Claude Haiku 5.5",
+    "Claude Opus 4.7",
+    "Claude Sonnet 4.6",
+    "Claude Haiku 4.5",
+  ],
+  copilot: [
+    "GPT-6.1 Sol",
+    "GPT-6 Sol",
+    "Claude Opus 5.5",
+    "Claude Sonnet 5.5",
+    "Gemini 3.8 Flash",
+    "Grok 4.7",
+  ],
+  cursor: [
+    "Auto",
+    "Composer",
+    "Claude Opus 5.5",
+    "Claude Sonnet 5.5",
+    "GPT-6.1 Sol",
+    "Gemini 3.8 Flash",
+  ],
+  deepseek: ["DeepSeek V4.1 Flash", "DeepSeek V4 Pro", "DeepSeek V4 Flash"],
+  gemini: [
+    "Gemini 3.8 Flash",
+    "Gemini 3.7 Flash",
+    "Gemini 3.5 Flash",
+    "Gemini 3.1 Pro",
+    "Gemini 2.5 Pro",
+    "Gemini 2.5 Flash",
+  ],
+  grok: ["Grok 4.7", "Grok 4.6", "Grok 4.5", "Grok 4.3"],
+  kimi: ["Kimi K3", "Kimi K2.7 Code", "Kimi K2.6", "Kimi K2.5", "Kimi K2"],
+  mistral: [
+    "Mistral Large 4",
+    "Mistral Medium 3.5",
+    "Mistral Small 3.2",
+    "Codestral 25.08",
+    "Devstral Small",
+  ],
+  zai: ["GLM-5.3", "GLM-5.2", "GLM-5.1", "GLM-5", "GLM-4.7", "GLM-4.7-Flash"],
+};
+function isProviderModel(provider: ProviderId, value: unknown): value is string {
+  return typeof value === "string" && providerModels[provider].includes(value);
+}
+function isModelFilter(provider: ProviderId, value: unknown): value is string {
+  return value === "" || value === "unspecified" || isProviderModel(provider, value);
+}
+export {
+  categories,
+  providers,
+  ranges,
+  findProvider,
+  isRange,
+  isCategory,
+  providerModels,
+  isProviderModel,
+  isModelFilter,
+};
 export type { Category, Provider, ProviderId, Range, Bucket, Dashboard, Overview };

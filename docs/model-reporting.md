@@ -1,0 +1,13 @@
+# Optional model reporting
+
+Reports remain provider-level contributions. Add nullable model metadata from a hardcoded provider-specific list. Default `AI` means no model specified, not a guessed model. Heading becomes `My [AI/model selector] feels...`. Selecting a model changes the next report intent; it does not write until a category is submitted. Preserve model metadata across reloads and category changes; undo clears a report's active contribution. One contribution per browser/provider/hour still applies, regardless of model.
+
+Add `/zai` (Z.AI) and `/kimi` (Kimi) to the shared provider registry, homepage, other-provider links, sitemap and logos. Existing providers and URLs stay stable. Hardcoded model lists are UI labels, not an assertion of live availability.
+
+Add an additive nullable `model` column via migration; old reports remain unspecified. HTTP and storage boundaries validate model names against the provider list. Omitted model means unspecified for compatibility with existing clients. Session/mutation responses return saved model. Report deduplication and timestamps do not change.
+
+Graph filter is independent of the reporting selection and stored in `?model=` alongside range. `All models` includes unspecified reports; `Unspecified` selects null metadata. Filter only displayed buckets and graph category/peak statistics. Provider hourly totals, sufficient-data gating, baseline and verdict always use all provider reports. Hide provider baseline/ratio on filtered graphs rather than implying a model-level algorithm. Empty filtered results must not change the provider verdict.
+
+Remove the chart's entire `x reports since time` line. Keep range controls and add an accessible model filter. Retain local-time axes/tooltips and challenge UX.
+
+Verify migration preserves old rows, model validation, persistence/change/undo, provider-only verdict invariance for every filter, shareable model/range URLs, new provider paths, anti-bot gates and mobile selectors. Run local gates and independent standards/spec reviews before merge. Do not deploy or migrate production without release approval.
