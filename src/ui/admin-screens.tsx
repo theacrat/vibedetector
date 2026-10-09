@@ -6,7 +6,6 @@ import type { Provider } from "@/domain";
 import type { AdminScreen } from "./admin";
 import { AdminCatalogue, AdminLogin } from "./admin-catalogue";
 import type { AdminState } from "./admin-data";
-import { useCatalogueOrder } from "./catalogue-order";
 import { ProviderForm } from "./provider-admin";
 
 function SignOut({ state }: { state: AdminState }) {
@@ -35,9 +34,13 @@ function ProviderEditor({ state, providerId }: { state: AdminState; providerId: 
       </div>
       {provider ? (
         <>
-          <section className="admin-panel">
-            <h2>Provider details</h2>
+          <AdminCatalogue state={state} selectedProvider={provider} />
+          <details className="admin-panel admin-settings">
+            <summary>Provider settings</summary>
             <ProviderForm provider={provider} state={state} key={provider.id} />
+            <p className="admin-help">
+              Archiving a provider hides it from new reports. Existing reports are kept.
+            </p>
             <button
               id={`provider-state-${provider.id}`}
               className="plain-button"
@@ -47,8 +50,7 @@ function ProviderEditor({ state, providerId }: { state: AdminState; providerId: 
             >
               {provider.active ? "Archive" : "Reactivate"} provider {provider.name}
             </button>
-          </section>
-          <AdminCatalogue state={state} selectedProvider={provider} />
+          </details>
         </>
       ) : (
         <section className="admin-panel">
@@ -59,39 +61,14 @@ function ProviderEditor({ state, providerId }: { state: AdminState; providerId: 
   );
 }
 
-// oxlint-disable-next-line eslint/max-lines-per-function
-function ProviderListRow({
-  provider,
-  index,
-  state,
-}: {
-  provider: Provider;
-  index: number;
-  state: AdminState;
-}) {
+function ProviderListRow({ provider }: { provider: Provider }) {
   const params = useMemo(() => ({ provider: provider.id }), [provider.id]);
-  const ids = useMemo(() => state.providers.map((entry) => entry.id), [state.providers]);
-  const onOrder = useCallback(
-    (order: string[]) => {
-      void state.run("/api/admin/providers/order", { ids: order });
-    },
-    [state],
-  );
-  const { up, down, moveUp, moveDown } = useCatalogueOrder({
-    id: provider.id,
-    ids,
-    index,
-    onOrder,
-    pending: state.pending,
-  });
   return (
     <li>
       <div className="admin-provider-summary">
         <span>
           <b>{provider.name}</b>
-          <small>
-            {provider.slug} · {provider.active ? "Active" : "Archived"}
-          </small>
+          <small>{provider.active ? "Active" : "Archived"}</small>
         </span>
         <Link
           className="plain-button"
@@ -102,33 +79,15 @@ function ProviderListRow({
           Edit
         </Link>
       </div>
-      <div className="admin-model-actions">
-        <button
-          className="plain-button"
-          type="button"
-          ref={up}
-          disabled={state.pending || index === 0}
-          aria-label={`Move up provider ${provider.name}`}
-          onClick={moveUp}
-        >
-          Move up
-        </button>
-        <button
-          className="plain-button"
-          type="button"
-          ref={down}
-          disabled={state.pending || index === ids.length - 1}
-          aria-label={`Move down provider ${provider.name}`}
-          onClick={moveDown}
-        >
-          Move down
-        </button>
-      </div>
     </li>
   );
 }
 
 function ProviderList({ state }: { state: AdminState }) {
+  const providers = useMemo(
+    () => state.providers.toSorted((left, right) => left.name.localeCompare(right.name, "en")),
+    [state.providers],
+  );
   return (
     <section className="admin-panel" aria-labelledby="providers-title">
       <div className="admin-heading">
@@ -140,8 +99,8 @@ function ProviderList({ state }: { state: AdminState }) {
         Add provider
       </Link>
       <ul className="admin-providers">
-        {state.providers.map((provider, index) => (
-          <ProviderListRow key={provider.id} provider={provider} index={index} state={state} />
+        {providers.map((provider) => (
+          <ProviderListRow key={provider.id} provider={provider} />
         ))}
       </ul>
     </section>

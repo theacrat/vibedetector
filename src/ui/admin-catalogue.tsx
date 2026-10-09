@@ -116,23 +116,25 @@ function AdminCatalogue({
       <div className="admin-heading">
         <h2 id="catalogue-title">Model catalogue</h2>
       </div>
-      <form onSubmit={submit}>
-        <label htmlFor="admin-model">Model name</label>
-        <input
-          id="admin-model"
-          value={name}
-          maxLength={120}
-          required
-          disabled={state.pending}
-          onChange={changeName}
-        />
-        <button className="plain-button" type="submit" disabled={state.pending || !name.trim()}>
-          Add model
-        </button>
-      </form>
-      <p>
-        Names can change without changing reports or shared model filters. Archive models to stop
-        new reports without losing their history.
+      <details className="admin-add-model">
+        <summary>Add a model</summary>
+        <form onSubmit={submit}>
+          <label htmlFor="admin-model">Model name</label>
+          <input
+            id="admin-model"
+            value={name}
+            maxLength={120}
+            required
+            disabled={state.pending}
+            onChange={changeName}
+          />
+          <button className="plain-button" type="submit" disabled={state.pending || !name.trim()}>
+            Add model
+          </button>
+        </form>
+      </details>
+      <p className="admin-help">
+        Archived models stay in old reports but are hidden from new ones.
       </p>
       {models.length === 0 ? (
         <p>No models for this provider.</p>
@@ -179,47 +181,52 @@ function AdminModel({
   }, [model, state]);
   return (
     <li>
-      <span>
-        <b>{model.name}</b>
-        <small>{model.active ? "Active" : "Archived"}</small>
+      <div className="admin-model-summary">
+        <span>
+          <b>{model.name}</b>
+          <small>{model.active ? "Active" : "Archived"}</small>
+        </span>
         <details className="admin-id">
           <summary>Model ID</summary>
           <code>{model.id}</code>
         </details>
-      </span>
-      <ModelRename model={model} state={state} />
-      <div className="admin-model-actions">
-        <button
-          className="plain-button"
-          ref={up}
-          type="button"
-          disabled={state.pending || index === 0}
-          aria-label={`Move up ${model.name}`}
-          onClick={moveUp}
-        >
-          Move up
-        </button>
-        <button
-          className="plain-button"
-          ref={down}
-          type="button"
-          disabled={state.pending || index === models.length - 1}
-          aria-label={`Move down ${model.name}`}
-          onClick={moveDown}
-        >
-          Move down
-        </button>
-        <button
-          className="plain-button"
-          id={`model-state-${model.id}`}
-          type="button"
-          disabled={state.pending}
-          aria-label={`${model.active ? "Archive" : "Reactivate"} ${model.name}`}
-          onClick={toggle}
-        >
-          {model.active ? "Archive" : "Reactivate"}
-        </button>
       </div>
+      <details className="admin-secondary-actions">
+        <summary>Edit model</summary>
+        <ModelRename model={model} state={state} />
+        <div className="admin-model-actions">
+          <button
+            className="plain-button"
+            ref={up}
+            type="button"
+            disabled={state.pending || index === 0}
+            aria-label={`Move up ${model.name}`}
+            onClick={moveUp}
+          >
+            Move up
+          </button>
+          <button
+            className="plain-button"
+            ref={down}
+            type="button"
+            disabled={state.pending || index === models.length - 1}
+            aria-label={`Move down ${model.name}`}
+            onClick={moveDown}
+          >
+            Move down
+          </button>
+          <button
+            className="plain-button"
+            id={`model-state-${model.id}`}
+            type="button"
+            disabled={state.pending}
+            aria-label={`${model.active ? "Archive" : "Reactivate"} ${model.name}`}
+            onClick={toggle}
+          >
+            {model.active ? "Archive" : "Reactivate"}
+          </button>
+        </div>
+      </details>
     </li>
   );
 }

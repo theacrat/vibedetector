@@ -14,11 +14,22 @@ test("provider dashboard opens UUID screens and unknown links do not select a pr
   });
   await page.goto("/admin");
   await expect(page.getByRole("heading", { exact: true, name: "Providers" })).toBeFocused();
+  await expect(page.locator(".admin-providers b")).toHaveText(["ChatGPT", "Claude"]);
+  await expect(page.getByRole("button", { name: /Move .* provider/u })).toHaveCount(0);
   await expect(page.getByLabel("Provider name")).toHaveCount(0);
   await expect(page.getByLabel("Model name", { exact: true })).toHaveCount(0);
   await page.getByRole("link", { name: "Edit Claude" }).click();
   await expect(page).toHaveURL(`/admin/providers/${claudeId}`);
   await expect(page.getByRole("heading", { name: "Edit Claude" })).toBeFocused();
+  await expect(page.getByLabel("Provider name")).toBeHidden();
+  await expect(page.getByLabel("Model name", { exact: true })).toBeHidden();
+  await expect(page.getByLabel("Rename Claude model")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Archive Claude model" })).toBeHidden();
+  await page.getByText("Edit model", { exact: true }).press("Enter");
+  await expect(page.getByLabel("Rename Claude model")).toBeVisible();
+  await page.getByText("Edit model", { exact: true }).press("Enter");
+  await expect(page.getByLabel("Rename Claude model")).toBeHidden();
+  await page.getByText("Provider settings", { exact: true }).click();
   await expect(page.getByLabel("Provider name")).toHaveValue("Claude");
   await expect(page.locator(".admin-models b")).toHaveText(["Claude model"]);
   await expect(page.getByLabel("Provider", { exact: true })).toHaveCount(0);
@@ -89,6 +100,7 @@ test("static creation route opens the newly created provider UUID", async ({ pag
   await page.getByRole("button", { exact: true, name: "Add provider" }).click();
   await expect(page).toHaveURL(`/admin/providers/${id}`);
   await expect(page.getByRole("heading", { name: "Edit New provider" })).toBeFocused();
+  await page.getByText("Provider settings", { exact: true }).click();
   await expect(page.getByLabel("Provider name")).toHaveValue("New provider");
   await expect(page.getByRole("heading", { name: "Model catalogue" })).toBeVisible();
   expect(writes).toEqual([
@@ -192,6 +204,7 @@ test("a successful provider write opens its editor when catalogue refresh fails"
   await expect(page).toHaveURL(`/admin/providers/${id}`);
   await expect(page.getByRole("heading", { name: "Edit Refresh failure" })).toBeFocused();
   await expect(page.getByRole("alert")).toHaveText("Provider saved but catalogue refresh failed.");
+  await page.getByText("Provider settings", { exact: true }).click();
   await page.getByLabel("Provider name").fill("Edited refresh failure");
   await page.getByRole("button", { name: "Save provider" }).click();
   await expect(page.getByRole("heading", { name: "Edit Edited refresh failure" })).toBeVisible();
@@ -317,6 +330,7 @@ test("successful model writes retain authoritative names when refresh fails", as
     });
   });
   await page.goto(`/admin/providers/${claudeId}`);
+  await page.getByText("Edit model", { exact: true }).click();
   await page.getByLabel("Rename Original model").fill("Saved model");
   await page.getByRole("button", { name: "Save model name" }).click();
   await expect(page.getByLabel("Rename Saved model")).toHaveValue("Saved model");
@@ -353,6 +367,18 @@ test("model operations retain unsaved fields and failed writes retain edits", as
     });
   });
   await page.goto(`/admin/providers/${claudeId}`);
+  await page.getByText("Provider settings", { exact: true }).click();
+  await page.getByText("Add a model", { exact: true }).click();
+  await page
+    .locator(".admin-models li")
+    .filter({ hasText: "First model" })
+    .getByText("Edit model", { exact: true })
+    .click();
+  await page
+    .locator(".admin-models li")
+    .filter({ hasText: "Second model" })
+    .getByText("Edit model", { exact: true })
+    .click();
   await page.getByLabel("Provider name").fill("Unsaved provider");
   await page.getByLabel("Rename First model").fill("Unsaved model");
   await page.getByLabel("Model name", { exact: true }).fill("Unsaved addition");
