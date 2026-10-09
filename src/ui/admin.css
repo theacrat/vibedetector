@@ -1,5 +1,5 @@
 .admin {
-  max-width: 760px;
+  max-width: 680px;
   padding-block: 48px;
 }
 .admin h1 {
@@ -9,7 +9,7 @@
   margin-bottom: 24px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  padding: 24px;
+  padding: 20px;
   background: var(--ink-2);
 }
 .admin-panel form,
@@ -48,6 +48,10 @@ form.admin-panel {
   margin-top: 24px;
   color: var(--muted);
 }
+.admin-help {
+  color: var(--muted);
+  font-size: 14px;
+}
 .admin-heading {
   display: flex;
   align-items: center;
@@ -65,8 +69,8 @@ form.admin-panel {
 }
 .admin-models li {
   display: grid;
-  gap: 16px;
-  padding: 16px 0;
+  gap: 10px;
+  padding: 14px 0;
   border-top: 1px solid var(--line);
 }
 .admin-providers {
@@ -79,6 +83,37 @@ form.admin-panel {
 }
 .admin-panel summary {
   cursor: pointer;
+  padding-block: 12px;
+}
+.admin-settings > summary {
+  font-weight: 600;
+  padding-block: 4px;
+}
+.admin-secondary-actions {
+  color: var(--muted);
+  font-size: 14px;
+}
+.admin-secondary-actions[open] {
+  color: var(--paper);
+}
+.admin-secondary-actions .admin-model-actions {
+  margin-top: 8px;
+}
+.admin-model-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.admin-model-summary span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.admin-add-model {
+  margin-block: 16px 8px;
+  border-block: 1px solid var(--line);
+}
+.admin-add-model form {
   padding-block: 12px;
 }
 .admin-provider-form {
@@ -147,7 +182,11 @@ form.admin-panel {
   }
   .admin-models li {
     align-items: flex-start;
+  }
+  .admin-model-summary {
+    align-items: flex-start;
     flex-direction: column;
+    gap: 4px;
   }
   .admin-model-actions {
     justify-content: flex-start;

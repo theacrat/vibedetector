@@ -71,8 +71,14 @@ test("admin key stays out of URLs and storage while UUID catalogue changes persi
   await page.getByRole("link", { name: "Edit ChatGPT" }).click();
   await expect(page.getByRole("heading", { name: "Edit ChatGPT" })).toBeFocused();
   await expect(page.getByLabel("Provider", { exact: true })).toHaveCount(0);
+  await page.getByText("Add a model", { exact: true }).click();
   await page.getByLabel("Model name", { exact: true }).fill("New database model");
   await page.getByRole("button", { name: "Add model" }).click();
+  await page
+    .locator(".admin-models li")
+    .filter({ hasText: "New database model" })
+    .getByText("Edit model", { exact: true })
+    .click();
   await expect(
     page.getByRole("button", { exact: true, name: "Archive New database model" }),
   ).toBeEnabled();
@@ -198,6 +204,7 @@ test("expired authentication returns focus to the key input", async ({ page }) =
   });
   await page.goto("/admin");
   await page.getByRole("link", { name: "Edit Claude" }).click();
+  await page.getByText("Edit model", { exact: true }).click();
   await page.getByRole("button", { exact: true, name: "Archive Live model" }).click();
   await expect(page.getByLabel("Administrator key")).toBeFocused();
   await expect(page.getByRole("alert")).toHaveText("Session expired.");
@@ -229,6 +236,11 @@ test("model UUID order includes archived rows and retains movement focus", async
   await page.goto("/admin");
   await page.getByRole("link", { name: "Edit Claude" }).click();
   const rows = page.locator(".admin-models b");
+  await page
+    .locator(".admin-models li")
+    .filter({ hasText: "First model" })
+    .getByText("Edit model", { exact: true })
+    .click();
   await expect(rows).toHaveText(["First model", "Archived model", "Last model"]);
   await expect(
     page.getByRole("button", { exact: true, name: "Move up First model" }),
@@ -283,6 +295,11 @@ test("reorder waits for authoritative catalogue and errors do not move rows", as
   await page.goto("/admin");
   await page.getByRole("link", { name: "Edit Claude" }).click();
   const rows = page.locator(".admin-models b");
+  await page
+    .locator(".admin-models li")
+    .filter({ hasText: "First model" })
+    .getByText("Edit model", { exact: true })
+    .click();
   const down = page.getByRole("button", { exact: true, name: "Move down First model" });
   await down.click();
   await expect(down).toBeDisabled();
@@ -335,6 +352,7 @@ test("provider edits preserve UUID and slug unless explicitly changed", async ({
   const form = page
     .locator(".admin-provider-form")
     .filter({ has: page.locator(`input[id="${claudeId}-name"]`) });
+  await page.getByText("Provider settings", { exact: true }).click();
   await form.getByLabel("Provider name").fill("Claude corrected");
   await form.getByRole("button", { name: "Save provider" }).click();
   await expect(page.getByRole("heading", { name: "Edit Claude corrected" })).toBeVisible();
@@ -358,12 +376,7 @@ test("provider edits preserve UUID and slug unless explicitly changed", async ({
     page.getByRole("button", { exact: true, name: "Reactivate provider Claude corrected" }),
   ).toBeFocused();
   await page.getByRole("link", { name: "All providers" }).click();
-  await page
-    .getByRole("button", { exact: true, name: "Move down provider Claude corrected" })
-    .click();
   await expect(page.locator(".admin-providers b")).toHaveText(["ChatGPT", "Claude corrected"]);
-  await expect(
-    page.getByRole("button", { exact: true, name: "Move up provider Claude corrected" }),
-  ).toBeFocused();
-  expect(writes).toContainEqual({ ids: [chatgptId, claudeId] });
+  await expect(page.getByRole("button", { name: /Move .* provider/u })).toHaveCount(0);
+  expect(writes).not.toContainEqual({ ids: [chatgptId, claudeId] });
 });
