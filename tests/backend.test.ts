@@ -367,6 +367,7 @@ test("provider URLs and slugs reject unsafe values and duplicate display values 
   if (!provider) {
     throw new Error("Missing provider seed");
   }
+  expect(parseProvider({ ...provider, logo: "" }).logo).toBe("");
   await Promise.all(
     [
       "api",
