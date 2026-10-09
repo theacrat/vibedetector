@@ -17,6 +17,8 @@ Open http://127.0.0.1:41873. Localhost uses Cloudflare's Turnstile test keys. Th
 
 Reports contribute once per AI per fixed UTC hour. Category changes and undo apply to the active hour only. Earlier reports remain in historical charts until retention removes them.
 
+Model reporting is optional. Curated lists are hardcoded in `src/domain.ts`. A model is metadata on the existing provider-level report, not a separate vote. Graph filters do not alter provider verdicts or baselines. Apply all local migrations after updating; the model migration preserves existing reports and expands provider support to Z.AI and Kimi. Production migrations still require approval.
+
 ## Gates
 
 ```sh
