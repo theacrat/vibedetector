@@ -32,7 +32,7 @@ function ModelSelect({
       onChange={change}
       disabled={disabled}
     >
-      <option value="">{filter ? "All models" : "AI"}</option>
+      <option value="">{filter ? "All models" : "model"}</option>
       {filter && <option value="unspecified">Unspecified</option>}
       {options.map(({ name, active }) => (
         <option key={name} value={name} disabled={!filter && !active}>
