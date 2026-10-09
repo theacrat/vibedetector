@@ -1,7 +1,8 @@
 import { env } from "cloudflare:workers";
 
-import type { Dashboard, Overview, Range } from "@/domain";
+import type { Dashboard, ModelOption, Overview, ProviderId, Range } from "@/domain";
 
+import { loadModels } from "./catalogue";
 import { dashboardFromDatabase, overviewFromDatabase } from "./queries";
 
 async function readDashboard(id: string, range: Range, model = ""): Promise<Dashboard> {
@@ -12,4 +13,8 @@ async function readOverview(): Promise<Overview[]> {
   return overviewFromDatabase(env.DB, Date.now());
 }
 
-export { readDashboard, readOverview };
+async function readModels(id: ProviderId): Promise<ModelOption[]> {
+  return loadModels(env.DB, id);
+}
+
+export { readDashboard, readOverview, readModels };

@@ -54,5 +54,5 @@ export function aggregate(
       verdict = "vibes are off";
     }
   }
-  return { asOf: now, baseline, buckets, hourly, model, provider, range, verdict };
+  return { asOf: now, baseline, buckets, hourly, model, models: [], provider, range, verdict };
 }

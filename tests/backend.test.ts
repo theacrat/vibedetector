@@ -1,11 +1,13 @@
 /* oxlint-disable unicorn/no-null -- SQL and JSON use null for unspecified metadata and retractions. */
 import { afterAll, expect, test } from "bun:test";
 
+import { initialModels as providerModels } from "@seed/models";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 
-import { providerModels, providers } from "@/domain";
+import { providers } from "@/domain";
 import { aggregate } from "@/server/aggregation";
 import { handleApi } from "@/server/api";
+import { loadModels } from "@/server/catalogue";
 import { dashboardFromDatabase } from "@/server/queries";
 import { browserIdentity, challengeConfig, readJson, verifyChallenge } from "@/server/security";
 import type { VerifyFetch } from "@/server/security";
@@ -22,6 +24,15 @@ async function migrateModels(db: D1Database): Promise<void> {
   ).text();
   await db.batch(
     migration
+      .split(";")
+      .filter((sql) => sql.trim() !== "")
+      .map((sql) => db.prepare(sql)),
+  );
+  const catalogue = await Bun.file(
+    new URL("../migrations/0003_model_catalogue.sql", import.meta.url),
+  ).text();
+  await db.batch(
+    catalogue
       .split(";")
       .filter((sql) => sql.trim() !== "")
       .map((sql) => db.prepare(sql)),
@@ -320,6 +331,7 @@ test("API persists reports and fails closed on challenge, rate-limit and databas
   expect(sessionBody).toEqual({
     category: null,
     model: null,
+    models: await loadModels(db, "claude"),
     siteKey: "1x00000000000000000000AA",
     window: Math.floor(Date.now() / HOUR),
   });
@@ -351,6 +363,7 @@ test("API persists reports and fails closed on challenge, rate-limit and databas
   expect(afterBody).toEqual({
     category: "slow",
     model: null,
+    models: await loadModels(db, "claude"),
     siteKey: "1x00000000000000000000AA",
     window: Math.floor(Date.now() / HOUR),
   });
@@ -483,7 +496,7 @@ test("D1 model metadata changes preserve deduplication, timestamps and retractio
   expect(await loadReports(db, "claude", now + 80)).toEqual([
     { category: "broken", created_at: now, model: null },
   ]);
-  await db.prepare("UPDATE reports SET model = 'GPT-6.1 Sol'").run();
+  await db.prepare("UPDATE reports SET model = ''").run();
   expect(await rejectionMessage(loadReports(db, "claude", now + 90))).toBe("Invalid stored model");
   expect(await rejectionMessage(sessionReport(db, "claude", "browser", now + 90))).toBe(
     "Invalid stored model",
@@ -620,6 +633,7 @@ test("HTTP model persistence, validation and challenge failure keep saved state"
   expect(reloadBody).toEqual({
     category: "slow",
     model: "Claude Opus 5.5",
+    models: await loadModels(db, "claude"),
     siteKey: "1x00000000000000000000AA",
     window,
   });
@@ -655,11 +669,317 @@ test("HTTP model persistence, validation and challenge failure keep saved state"
     new Request("http://localhost/api/providers/claude?model=GPT-6.1%20Sol"),
     bindings,
   );
-  expect(invalidFilter.status).toBe(400);
+  expect(invalidFilter.status).toBe(200);
+  const invalidFilterBody: unknown = await invalidFilter.json();
+  expect(invalidFilterBody).toMatchObject({ model: "" });
   const undo = await handleApi(request(null, "Claude Sonnet 5.5"), bindings, verify);
   const undoBody: unknown = await undo.json();
   expect(undoBody).toEqual({ category: null, model: "Claude Sonnet 5.5" });
   const unspecified = await handleApi(request("slow", null), bindings, verify);
   const unspecifiedBody: unknown = await unspecified.json();
   expect(unspecifiedBody).toEqual({ category: "slow", model: null });
+});
+
+const adminKey = "a-secret-used-only-for-tests-123456789";
+
+function adminRequest(
+  path: string,
+  body?: unknown,
+  cookie = "",
+  origin = "http://localhost",
+): Request {
+  return new Request(`http://localhost/api/admin/${path}`, {
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    headers: {
+      "CF-Connecting-IP": "127.0.0.1",
+      "Content-Type": "application/json",
+      Cookie: cookie,
+      Origin: origin,
+    },
+    method: body === undefined ? "GET" : "POST",
+  });
+}
+
+async function apiStatus(
+  request: Request,
+  bindings: Cloudflare.Env,
+  verify: VerifyFetch = successfulVerify,
+): Promise<number> {
+  const response = await handleApi(request, bindings, verify);
+  return response.status;
+}
+
+async function migrateModelsCatalogue(db: D1Database): Promise<void> {
+  const sql = await Bun.file(
+    new URL("../migrations/0003_model_catalogue.sql", import.meta.url),
+  ).text();
+  await db.batch(
+    sql
+      .split(";")
+      .filter((statement) => statement.trim() !== "")
+      .map((statement) => db.prepare(statement)),
+  );
+}
+
+function adminBindings(db: D1Database): Cloudflare.Env {
+  return {
+    ADMIN_KEY: adminKey,
+    ADMIN_RATE_LIMIT: {
+      async limit() {
+        return { success: await Promise.resolve(true) };
+      },
+    },
+    DB: db,
+    REPORT_RATE_LIMIT: {
+      async limit() {
+        return { success: await Promise.resolve(true) };
+      },
+    },
+    TURNSTILE_HOSTNAME: "vibedetector.net",
+    TURNSTILE_SITE_KEY: "0x4AAAAAAFROSyaakxb3TQIa",
+  };
+}
+
+test("admin fails closed, bounds keys, requires origin and limits login attempts separately", async () => {
+  const bindings = adminBindings(await database());
+  expect(await apiStatus(adminRequest("models"), bindings)).toBe(401);
+  expect(
+    await apiStatus(adminRequest("models", { name: "new", provider: "claude" }), bindings),
+  ).toBe(401);
+  expect(await apiStatus(adminRequest("login", { key: "wrong" }), bindings)).toBe(401);
+  const oversizedKey = "x".repeat(1025);
+  const oversizedBody = "x".repeat(5000);
+  expect(await apiStatus(adminRequest("login", { key: oversizedKey }), bindings)).toBe(400);
+  expect(await apiStatus(adminRequest("login", { key: oversizedBody }), bindings)).toBe(413);
+  expect(
+    await apiStatus(adminRequest("login", { key: adminKey }, "", "https://evil.invalid"), bindings),
+  ).toBe(403);
+  expect(
+    await apiStatus(adminRequest("login", { key: adminKey }), { ...bindings, ADMIN_KEY: "short" }),
+  ).toBe(503);
+  const missing = { ...bindings };
+  Reflect.deleteProperty(missing, "ADMIN_RATE_LIMIT");
+  expect(await apiStatus(adminRequest("login", { key: adminKey }), missing)).toBe(503);
+  const runtime = new Miniflare(
+    convertV4MiniflareOptions({
+      workers: [
+        {
+          modules: true,
+          ratelimits: {
+            ADMIN_RATE_LIMIT: { namespace_id: "874164", simple: { limit: 2, period: 60 } },
+          },
+          script: "export default { fetch() { return new Response('ok'); } }",
+        },
+      ],
+    }),
+  );
+  runtimes.push(runtime);
+  const limits = await runtime.getBindings<{ ADMIN_RATE_LIMIT: RateLimit }>();
+  const limited = { ...bindings, ADMIN_RATE_LIMIT: limits.ADMIN_RATE_LIMIT };
+  expect(await apiStatus(adminRequest("login", { key: "wrong" }), limited)).toBe(401);
+  expect(await apiStatus(adminRequest("login", { key: "wrong" }), limited)).toBe(401);
+  expect(await apiStatus(adminRequest("login", { key: adminKey }), limited)).toBe(429);
+});
+
+test("admin cookie signatures, expiry, rotation, HTTPS and logout are enforced", async () => {
+  const bindings = adminBindings(await database());
+  const response = await handleApi(adminRequest("login", { key: adminKey }), bindings);
+  expect(response.status).toBe(200);
+  const cookie = cookieHeader(response);
+  expect(response.headers.get("Set-Cookie")).toContain("HttpOnly; SameSite=Strict; Max-Age=3600");
+  expect(response.headers.get("Set-Cookie")).not.toContain("Domain=");
+  expect(cookie).not.toContain(adminKey);
+  expect(await apiStatus(adminRequest("models", undefined, cookie), bindings)).toBe(200);
+  expect(
+    await apiStatus(adminRequest("models", undefined, cookie, "https://evil.invalid"), bindings),
+  ).toBe(403);
+  const crossSite = new Request("http://localhost/api/admin/models", {
+    headers: { Cookie: cookie, "Sec-Fetch-Site": "cross-site" },
+  });
+  expect(await apiStatus(crossSite, bindings)).toBe(403);
+  const absentOrigin = new Request("http://localhost/api/admin/models", {
+    headers: { Cookie: cookie },
+  });
+  expect(await apiStatus(absentOrigin, bindings)).toBe(200);
+  const corrupt = `${cookie.slice(0, -1)}z`;
+  expect(await apiStatus(adminRequest("models", undefined, corrupt), bindings)).toBe(401);
+  expect(
+    await apiStatus(adminRequest("models", undefined, cookie), {
+      ...bindings,
+      ADMIN_KEY: "rotated-test-key-12345678901234567890",
+    }),
+  ).toBe(401);
+  const issued = `${Date.now() - HOUR - 1}`;
+  const payload = `${issued}.${"0".repeat(32)}`;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(adminKey),
+    { hash: "SHA-256", name: "HMAC" },
+    false,
+    ["sign"],
+  );
+  const signed = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+  const signature = Array.from(new Uint8Array(signed), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+  expect(
+    await apiStatus(
+      adminRequest("models", undefined, `vd_admin=${payload}.${signature}`),
+      bindings,
+    ),
+  ).toBe(401);
+  const secure = await handleApi(
+    new Request("https://vibedetector.net/api/admin/login", {
+      body: JSON.stringify({ key: adminKey }),
+      headers: {
+        "CF-Connecting-IP": "127.0.0.1",
+        "Content-Type": "application/json",
+        Origin: "https://vibedetector.net",
+      },
+      method: "POST",
+    }),
+    bindings,
+  );
+  expect(secure.headers.get("Set-Cookie")).toContain("Secure");
+  const insecure = await handleApi(
+    new Request("http://vibedetector.net/api/admin/login", {
+      body: JSON.stringify({ key: adminKey }),
+      headers: {
+        "CF-Connecting-IP": "127.0.0.1",
+        "Content-Type": "application/json",
+        Origin: "http://vibedetector.net",
+      },
+      method: "POST",
+    }),
+    bindings,
+  );
+  expect(insecure.status).toBe(403);
+  const logout = await handleApi(adminRequest("logout", {}, cookie), bindings);
+  expect(logout.headers.get("Set-Cookie")).toContain("Max-Age=0");
+});
+
+test("admin login and signed sessions execute inside the actual Workers runtime", async () => {
+  const bundle = await Bun.build({
+    entrypoints: [new URL("../src/server/api.ts", import.meta.url).pathname],
+    external: ["node:crypto"],
+    target: "node",
+  });
+  expect(bundle.success).toBe(true);
+  const [output] = bundle.outputs;
+  if (!output) {
+    throw new Error("Missing Worker bundle");
+  }
+  const script = `${await output.text()}\nexport default { fetch(request, env) { return handleApi(request, env); } };`;
+  const runtime = new Miniflare(
+    convertV4MiniflareOptions({
+      workers: [
+        {
+          bindings: { ADMIN_KEY: adminKey },
+          compatibilityDate: "2026-10-08",
+          compatibilityFlags: ["nodejs_compat"],
+          d1Databases: ["DB"],
+          modules: true,
+          ratelimits: {
+            ADMIN_RATE_LIMIT: { namespace_id: "874164", simple: { limit: 5, period: 60 } },
+          },
+          script,
+        },
+      ],
+    }),
+  );
+  runtimes.push(runtime);
+  const { DB: db } = await runtime.getBindings<{ DB: D1Database }>();
+  await migrateModelsCatalogue(db);
+  // Miniflare's Bun type replacement misidentifies Fetcher as Request; the runtime exposes fetch.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  const worker = (await runtime.getWorker()) as unknown as {
+    fetch: (input: string, init?: RequestInit) => Promise<Response>;
+  };
+  const login = await worker.fetch("https://localhost/api/admin/login", {
+    body: JSON.stringify({ key: adminKey }),
+    headers: {
+      "CF-Connecting-IP": "192.0.2.99",
+      "Content-Type": "application/json",
+      Origin: "https://localhost",
+    },
+    method: "POST",
+  });
+  const loginBody: unknown = await login.json();
+  expect(loginBody).toEqual({ authenticated: true });
+  expect(login.status).toBe(200);
+  const cookie = login.headers.get("Set-Cookie")?.split(";")[0] ?? "";
+  expect(cookie).toMatch(/^vd_admin=\d{13}\.[a-f0-9]{32}\.[a-f0-9]{64}$/u);
+  const catalogue = await worker.fetch("https://localhost/api/admin/models", {
+    headers: { Cookie: cookie },
+  });
+  expect(catalogue.status).toBe(200);
+  const rows: unknown = await catalogue.json();
+  expect(rows).toContainEqual({ active: true, name: "GPT-6 Astra", provider: "chatgpt" });
+});
+
+test("catalogue additions and states persist without reseeding and preserve archived history", async () => {
+  const db = await database();
+  const bindings = adminBindings(db);
+  const login = await handleApi(adminRequest("login", { key: adminKey }), bindings);
+  const cookie = cookieHeader(login);
+  const model = { name: "Claude Future", provider: "claude" } as const;
+  const add = await handleApi(adminRequest("models", model, cookie), bindings);
+  expect(add.status).toBe(200);
+  expect(add.headers.get("Cache-Control")).toBe("no-store");
+  expect(
+    await apiStatus(
+      adminRequest("models/state", { ...model, active: false }, cookie, "https://evil.invalid"),
+      bindings,
+    ),
+  ).toBe(403);
+  for (const name of ["", "unspecified", "ALL", " x", "x".repeat(121), "bad\nname"]) {
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    const status = await apiStatus(
+      adminRequest("models", { name, provider: "claude" }, cookie),
+      bindings,
+    );
+    expect(status).toBe(400);
+  }
+  const session = await handleApi(new Request("http://localhost/api/session/claude"), bindings);
+  const identity = cookieHeader(session);
+  const window = Math.floor(Date.now() / HOUR);
+  const report = (category: string | null) =>
+    post(JSON.stringify({ category, model: model.name, token: "dummy", window }), {
+      Cookie: identity,
+    });
+  expect(await apiStatus(report("slow"), bindings)).toBe(200);
+  expect(
+    await apiStatus(adminRequest("models/state", { ...model, active: false }, cookie), bindings),
+  ).toBe(200);
+  expect(await apiStatus(adminRequest("models", model, cookie), bindings)).toBe(200);
+  expect(await loadModels(db, "claude")).toContainEqual({ ...model, active: false });
+  const choices = await handleApi(
+    new Request("http://localhost/api/session/claude", { headers: { Cookie: identity } }),
+    bindings,
+  );
+  const choiceBody: unknown = await choices.json();
+  expect(choiceBody).toMatchObject({
+    category: "slow",
+    model: model.name,
+    models: providerModels.claude.map((name) => ({ active: true, name, provider: "claude" })),
+  });
+  expect(await apiStatus(report("slow"), bindings)).toBe(200);
+  const historical = await dashboardFromDatabase(db, "claude", "24h", Date.now(), model.name);
+  expect(historical.model).toBe(model.name);
+  expect(historical.buckets.reduce((total, bucket) => total + bucket.slow, 0)).toBe(1);
+  expect(await apiStatus(report(null), bindings)).toBe(200);
+  expect(await apiStatus(report("broken"), bindings)).toBe(400);
+  expect(
+    await apiStatus(adminRequest("models/state", { ...model, active: true }, cookie), bindings),
+  ).toBe(200);
+  expect(await apiStatus(report("broken"), bindings)).toBe(200);
+  await db
+    .prepare("UPDATE models SET active = 0 WHERE provider = 'chatgpt' AND name = 'GPT-6 Astra'")
+    .run();
+  await migrateModelsCatalogue(db);
+  expect(await loadModels(db, "chatgpt")).toContainEqual({
+    active: false,
+    name: "GPT-6 Astra",
+    provider: "chatgpt",
+  });
 });
