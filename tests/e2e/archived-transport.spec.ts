@@ -29,9 +29,13 @@ test("real archived D1 entries are excluded from SSR and server-function transpo
   expect(await rendered.text()).not.toContain(name);
   await page.goto("/kimi");
   await expect(page.getByRole("combobox", { exact: true, name: "Report model" })).toBeEnabled();
-  const transport = page.waitForResponse(
-    (response) => response.url().includes("/_serverFn/") && response.request().method() === "GET",
-  );
+  const transport = page.waitForResponse(async (response) => {
+    if (!response.url().includes("/_serverFn/") || response.request().method() !== "GET") {
+      return false;
+    }
+    const payload = await response.text();
+    return payload.includes('"s":"7d"');
+  });
   await page.getByRole("button", { exact: true, name: "7d" }).click();
   const transported = await transport;
   const payload = await transported.text();
