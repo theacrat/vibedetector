@@ -1173,7 +1173,7 @@ test("catalogue changes between order validation and D1 batch leave all position
         provider: "claude",
       }),
     ),
-  ).toBe(400);
+  ).toBe(409);
   const rows = await db
     .prepare("SELECT name, position FROM models WHERE provider = 'claude' ORDER BY position")
     .all();
@@ -1182,4 +1182,37 @@ test("catalogue changes between order validation and D1 batch leave all position
     { name: "Claude Sonnet 5.5", position: 1 },
     { name: "Concurrent model", position: 99 },
   ]);
+});
+
+test("archived report exception remains scoped to its identity, provider, hour and nonretracted state", async () => {
+  const db = await database();
+  const now = 100 * HOUR + 10;
+  await saveReport(db, "claude", "owner", "slow", now, "Claude Opus 5.5");
+  await db
+    .prepare("UPDATE models SET active = 0 WHERE provider = 'claude' AND name = 'Claude Opus 5.5'")
+    .run();
+  expect(await saveReport(db, "claude", "owner", "broken", now + 10, "Claude Opus 5.5")).toBe(
+    "broken",
+  );
+  expect(await sessionReport(db, "claude", "owner", now + 20)).toEqual({
+    category: "broken",
+    model: "Claude Opus 5.5",
+  });
+  expect(await errorStatus(saveReport(db, "claude", "other", "slow", now, "Claude Opus 5.5"))).toBe(
+    400,
+  );
+  expect(
+    await errorStatus(saveReport(db, "chatgpt", "owner", "slow", now, "Claude Opus 5.5")),
+  ).toBe(400);
+  expect(
+    await errorStatus(saveReport(db, "claude", "owner", "slow", now + HOUR, "Claude Opus 5.5")),
+  ).toBe(400);
+  expect(await saveReport(db, "claude", "owner", null, now + 30, "Claude Opus 5.5")).toBeNull();
+  expect(
+    await errorStatus(saveReport(db, "claude", "owner", "slow", now + 40, "Claude Opus 5.5")),
+  ).toBe(400);
+  expect(await sessionReport(db, "claude", "owner", now + 50)).toEqual({
+    category: null,
+    model: "Claude Opus 5.5",
+  });
 });

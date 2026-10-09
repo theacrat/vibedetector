@@ -120,7 +120,7 @@ async function orderModels(db: D1Database, body: unknown): Promise<void> {
     throw new Error("Catalogue order failed");
   }
   if (result.meta.changes !== names.length) {
-    throw new ApiError(400, "Catalogue changed; reload before ordering");
+    throw new ApiError(409, "Catalogue changed; reload before ordering");
   }
 }
 
