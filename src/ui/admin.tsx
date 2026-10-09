@@ -21,9 +21,9 @@ declare module "@tanstack/react-router" {
 function ModelAdmin({ screen = listScreen }: { screen?: AdminScreen }) {
   const location = useLocation();
   const saved = location.state.savedProvider;
-  const state = useAdmin(
-    screen.kind === "edit" && saved?.id === screen.providerId ? saved : undefined,
-  );
+  const savedProvider =
+    screen.kind === "edit" && saved?.id === screen.providerId ? saved : undefined;
+  const state = useAdmin(savedProvider);
   const heading = useRef<HTMLHeadingElement>(null);
   const authenticated = state.models !== undefined;
   const provider =

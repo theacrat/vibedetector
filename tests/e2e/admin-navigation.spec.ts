@@ -44,6 +44,23 @@ test("static creation route opens the newly created provider UUID", async ({ pag
     if (route.request().method() === "POST") {
       const body: unknown = route.request().postDataJSON();
       writes.push(body);
+      if (path.endsWith("/update")) {
+        if (
+          !body ||
+          typeof body !== "object" ||
+          !("name" in body) ||
+          typeof body.name !== "string"
+        ) {
+          throw new Error("Expected provider rename.");
+        }
+        const provider = providers.find((entry) => entry.id === id);
+        if (!provider) {
+          throw new Error("Missing created provider.");
+        }
+        provider.name = body.name;
+        await route.fulfill({ json: providers });
+        return;
+      }
       providers.push({
         active: true,
         id,
@@ -84,6 +101,18 @@ test("static creation route opens the newly created provider UUID", async ({ pag
       statusLabel: "Service status",
     },
   ]);
+  await page.getByLabel("Provider name").fill("Renamed provider");
+  await page.getByRole("button", { name: "Save provider" }).click();
+  await expect(page.getByRole("heading", { name: "Edit Renamed provider" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Provider name")).toHaveValue("Renamed provider");
+  await page.getByRole("link", { name: "All providers" }).click();
+  await page.goBack();
+  await expect(page.getByLabel("Provider name")).toHaveValue("Renamed provider");
+  await page.goForward();
+  await expect(page.getByRole("heading", { exact: true, name: "Providers" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByLabel("Provider name")).toHaveValue("Renamed provider");
 });
 
 test("a delayed creation cannot navigate after leaving the creation screen", async ({ page }) => {
@@ -176,6 +205,60 @@ test("authentication preserves the requested edit route", async ({ page }) => {
   await page.getByRole("button", { exact: true, name: "Sign in" }).click();
   await expect(page).toHaveURL(`/admin/providers/${chatgptId}`);
   await expect(page.getByRole("heading", { name: "Edit ChatGPT" })).toBeFocused();
+});
+
+test("successful creation survives refresh authentication expiry without duplicate creation", async ({
+  page,
+}) => {
+  const id = "10000000-0000-4000-8000-000000000006";
+  const providers = structuredClone(adminProviders);
+  let authenticated = true;
+  let creations = 0;
+  await page.route("**/api/admin/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/login")) {
+      authenticated = true;
+      await route.fulfill({ json: { ok: true } });
+      return;
+    }
+    if (route.request().method() === "POST" && path.endsWith("/providers")) {
+      creations += 1;
+      providers.push({
+        ...adminProviders[0],
+        active: true,
+        id,
+        logo: "",
+        maker: "Maker",
+        name: "Committed provider",
+        slug: "committed-provider",
+        status: "https://status.example.com",
+        statusLabel: "Service status",
+      });
+      authenticated = false;
+      await route.fulfill({ json: providers });
+      return;
+    }
+    if (!authenticated) {
+      await route.fulfill({ json: { error: "Session expired." }, status: 401 });
+      return;
+    }
+    await route.fulfill({ json: path.endsWith("/providers") ? providers : [] });
+  });
+  await page.goto("/admin/providers/new");
+  await page.getByLabel("Provider name").fill("Committed provider");
+  await page.getByLabel("URL slug").fill("committed-provider");
+  await page.getByLabel("Maker", { exact: true }).fill("Maker");
+  await page.getByLabel("Official status URL").fill("https://status.example.com");
+  await page.getByLabel("Status link label").fill("Service status");
+  await page.getByRole("button", { exact: true, name: "Add provider" }).click();
+  await expect(page).toHaveURL(`/admin/providers/${id}`);
+  await expect(page.getByLabel("Administrator key")).toBeFocused();
+  await expect(page.getByLabel("Provider name")).toHaveCount(0);
+  await page.getByLabel("Administrator key").fill("test-only-key");
+  await page.getByRole("button", { exact: true, name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Edit Committed provider" })).toBeFocused();
+  await expect(page.getByLabel("Provider name")).toHaveValue("Committed provider");
+  expect(creations).toBe(1);
 });
 
 test("successful model writes retain authoritative names when refresh fails", async ({ page }) => {

@@ -7,8 +7,8 @@ import { requestJson, RequestError } from "./data";
 
 // oxlint-disable-next-line eslint/max-lines-per-function
 function useAdmin(savedProvider?: Provider) {
-  const [models, setModels] = useState<ModelOption[] | undefined>(savedProvider ? [] : undefined);
-  const [providers, setProviders] = useState<Provider[]>(savedProvider ? [savedProvider] : []);
+  const [models, setModels] = useState<ModelOption[]>();
+  const [providers, setProviders] = useState<Provider[]>([]);
   const [pending, setPending] = useState(true);
   const [adminError, setAdminError] = useState("");
   const focusId = useRef("");
@@ -65,7 +65,6 @@ function useAdmin(savedProvider?: Provider) {
       } catch (error) {
         if (error instanceof RequestError && error.status === 401) {
           setModels(undefined);
-          authoritative = undefined;
         }
         let message = error instanceof Error ? error.message : "Could not update the catalogue.";
         if (authoritative) {
@@ -87,6 +86,9 @@ function useAdmin(savedProvider?: Provider) {
       } catch (error) {
         if (error instanceof RequestError && error.status === 401) {
           setModels(undefined);
+        } else if (savedProvider) {
+          setProviders([savedProvider]);
+          setModels([]);
         }
         const message = error instanceof Error ? error.message : "Could not load the catalogue.";
         setAdminError(
