@@ -143,6 +143,9 @@ function Report({ id }: { id: ProviderId }) {
   );
   const options = useMemo(() => {
     const models = [...(session?.models ?? [])];
+    if (session?.savedModel && !models.some((model) => model.id === session.savedModel?.id)) {
+      models.push(session.savedModel);
+    }
     for (const modelId of [session?.model, state.selectedModel]) {
       if (modelId && !models.some((model) => model.id === modelId)) {
         models.push({

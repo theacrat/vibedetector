@@ -16,7 +16,13 @@ test("public selectors preserve active order and graph filters omit archived ent
       json: {
         category: "slow",
         model: savedId,
-        models,
+        models: models.filter((model) => model.active),
+        savedModel: {
+          active: false,
+          id: savedId,
+          name: "Saved archived model",
+          provider: claudeId,
+        },
         siteKey: "test-site-key",
         window: Math.floor(Date.now() / 3_600_000),
       },
@@ -47,8 +53,8 @@ test("public selectors preserve active order and graph filters omit archived ent
   await expect(report.locator("option")).toHaveText([
     "model",
     "Second before first",
-    "Saved archived model (archived)",
     "First after second",
+    "Saved archived model (archived)",
   ]);
   await expect(report).toHaveValue(savedId);
   await expect(report.locator(`option[value="${savedId}"]`)).toBeDisabled();

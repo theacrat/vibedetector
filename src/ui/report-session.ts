@@ -9,6 +9,7 @@ import { readSession } from "./session-data";
 import { loadTurnstile, mountWidget } from "./turnstile";
 
 interface Session {
+  savedModel?: ModelOption;
   models: ModelOption[];
   category: Category | null;
   model: string | null;

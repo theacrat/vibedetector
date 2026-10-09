@@ -119,7 +119,6 @@ test("catalogue refresh preserves a draft and archived saved reports can still b
         category: "slow",
         model: savedId,
         models: [
-          { active: false, id: savedId, name: "Saved archived model", provider: claudeId },
           {
             active: true,
             id: refreshed ? nextId : draftId,
@@ -127,6 +126,12 @@ test("catalogue refresh preserves a draft and archived saved reports can still b
             provider: claudeId,
           },
         ],
+        savedModel: {
+          active: false,
+          id: savedId,
+          name: "Saved archived model",
+          provider: claudeId,
+        },
         siteKey: "test-site-key",
         window: Math.floor(Date.now() / 3_600_000),
       },
@@ -162,7 +167,13 @@ test("an existing archived report can change category but cannot be recreated af
       json: {
         category,
         model: savedId,
-        models: [{ active: false, id: savedId, name: "Saved archived model", provider: claudeId }],
+        models: [],
+        savedModel: {
+          active: false,
+          id: savedId,
+          name: "Saved archived model",
+          provider: claudeId,
+        },
         siteKey: "test-site-key",
         window: Math.floor(Date.now() / 3_600_000),
       },
@@ -213,6 +224,37 @@ test("an existing archived report can change category but cannot be recreated af
     "This model is archived. Choose an active model for a new report.",
   );
   expect(writes).toHaveLength(2);
+});
+
+test("renamed archived saved metadata keeps its UUID and displays the current name after reload", async ({
+  page,
+}) => {
+  let name = "Archived original name";
+  await page.route(`**/api/session/${claudeId}`, async (route) => {
+    await route.fulfill({
+      json: {
+        category: "slow",
+        model: savedId,
+        models: [],
+        savedModel: { active: false, id: savedId, name, provider: claudeId },
+        siteKey: "test-site-key",
+        window: Math.floor(Date.now() / 3_600_000),
+      },
+    });
+  });
+  await page.goto("/claude");
+  const select = page.getByRole("combobox", { exact: true, name: "Report model" });
+  const saved = select.locator(`option[value="${savedId}"]`);
+  await expect(select).toHaveValue(savedId);
+  await expect(saved).toHaveText("Archived original name (archived)");
+  await expect(saved).toBeDisabled();
+  name = "Archived corrected name";
+  await page.reload();
+  await expect(select).toHaveValue(savedId);
+  await expect(saved).toHaveText("Archived corrected name (archived)");
+  await expect(saved).toBeDisabled();
+  await page.getByRole("button", { name: /^slow/iu }).click();
+  await expect(page.getByText("Verifying before removing your report.")).toBeVisible();
 });
 
 test("malformed public catalogue refresh retains the current dashboard and shows an error", async ({
