@@ -1,20 +1,41 @@
+/* oxlint-disable unicorn/no-null -- SQL and JSON use null for unspecified metadata and retractions. */
 import { afterAll, expect, test } from "bun:test";
 
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 
-import { providers } from "@/domain";
+import { providerModels, providers } from "@/domain";
 import { aggregate } from "@/server/aggregation";
 import { handleApi } from "@/server/api";
+import { dashboardFromDatabase } from "@/server/queries";
 import { browserIdentity, challengeConfig, readJson, verifyChallenge } from "@/server/security";
 import type { VerifyFetch } from "@/server/security";
-import { HOUR, loadReports, retainReports, saveReport, sessionCategory } from "@/server/storage";
+import {
+  HOUR,
+  loadReports,
+  retainReports,
+  saveReport,
+  sessionCategory,
+  sessionReport,
+} from "@/server/storage";
 
 const runtimes: Miniflare[] = [];
 afterAll(async () => {
   await Promise.all(runtimes.map(async (runtime) => runtime.dispose()));
 });
 
-async function database(): Promise<D1Database> {
+async function migrateModels(db: D1Database): Promise<void> {
+  const migration = await Bun.file(
+    new URL("../migrations/0002_report_models.sql", import.meta.url),
+  ).text();
+  await db.batch(
+    migration
+      .split(";")
+      .filter((sql) => sql.trim() !== "")
+      .map((sql) => db.prepare(sql)),
+  );
+}
+
+async function database(includeModels = true): Promise<D1Database> {
   const runtime = new Miniflare(
     convertV4MiniflareOptions({
       workers: [
@@ -38,6 +59,9 @@ async function database(): Promise<D1Database> {
       .filter((sql) => sql.trim() !== "")
       .map((sql) => db.prepare(sql)),
   );
+  if (includeModels) {
+    await migrateModels(db);
+  }
   return db;
 }
 
@@ -75,6 +99,22 @@ async function mockResponse(body: unknown): Promise<Response> {
   return response;
 }
 
+const successfulVerify: VerifyFetch = async () =>
+  mockResponse({
+    hostname: "example.com",
+    metadata: { result_with_testing_key: true },
+    success: true,
+  });
+
+async function rejectionMessage(promise: Promise<unknown>): Promise<string> {
+  try {
+    await promise;
+    return "Did not reject";
+  } catch (error) {
+    return error instanceof Error ? error.message : "Unknown error";
+  }
+}
+
 async function errorStatus(promise: Promise<unknown>): Promise<number> {
   try {
     await promise;
@@ -100,7 +140,7 @@ test("D1 atomic upsert retries preserve timestamps across switches and retractio
   );
   await saveReport(db, "claude", "hash", "slow", now + 1000);
   expect(await loadReports(db, "claude", now + 2000)).toEqual([
-    { category: "slow", created_at: now },
+    { category: "slow", created_at: now, model: null },
   ]);
   // SQL NULL is the persisted retraction state, not an omitted parameter.
   // oxlint-disable-next-line unicorn/no-null
@@ -109,8 +149,8 @@ test("D1 atomic upsert retries preserve timestamps across switches and retractio
   await saveReport(db, "claude", "hash", "broken", now + 3000);
   await saveReport(db, "claude", "hash", "slow", now + HOUR);
   expect(await loadReports(db, "claude", now + HOUR)).toEqual([
-    { category: "broken", created_at: now },
-    { category: "slow", created_at: now + HOUR },
+    { category: "broken", created_at: now, model: null },
+    { category: "slow", created_at: now + HOUR, model: null },
   ]);
 });
 
@@ -141,14 +181,14 @@ test("D1 retention drains more than 5000 expired rows in bounded batches", async
   const db = await database();
   await db
     .prepare(`WITH RECURSIVE ids(value) AS (SELECT 0 UNION ALL SELECT value + 1 FROM ids WHERE value < 5001)
-    INSERT INTO reports SELECT 'claude', CAST(value AS TEXT), 0, 0, NULL FROM ids`)
+    INSERT INTO reports (provider, identity_hash, window, created_at, category) SELECT 'claude', CAST(value AS TEXT), 0, 0, NULL FROM ids`)
     .run();
   await saveReport(db, "claude", "recent", "slow", 200 * HOUR);
   await retainReports(db, 200 * HOUR);
   expect(await db.prepare("SELECT COUNT(*) AS total FROM reports").first<number>("total")).toBe(1);
   await retainReports(db, 200 * HOUR);
   expect(await loadReports(db, "claude", 200 * HOUR)).toEqual([
-    { category: "slow", created_at: 200 * HOUR },
+    { category: "slow", created_at: 200 * HOUR, model: null },
   ]);
 });
 
@@ -287,6 +327,7 @@ test("API persists reports and fails closed on challenge, rate-limit and databas
   expect(sessionBody).toEqual({
     // oxlint-disable-next-line unicorn/no-null
     category: null,
+    model: null,
     siteKey: "1x00000000000000000000AA",
     window: Math.floor(Date.now() / HOUR),
   });
@@ -294,7 +335,7 @@ test("API persists reports and fails closed on challenge, rate-limit and databas
   const cookie = cookieHeader(session);
   const response = await handleApi(reportPost("slow", cookie), bindings, verify);
   const responseBody: unknown = await response.json();
-  expect(responseBody).toEqual({ category: "slow" });
+  expect(responseBody).toEqual({ category: "slow", model: null });
   expect(challenges).toBe(1);
   const expiredWindow = Math.floor(Date.now() / HOUR) - 1;
   const stale = await handleApi(reportPost("broken", cookie, expiredWindow), bindings, verify);
@@ -317,6 +358,7 @@ test("API persists reports and fails closed on challenge, rate-limit and databas
   const afterBody: unknown = await afterFailure.json();
   expect(afterBody).toEqual({
     category: "slow",
+    model: null,
     siteKey: "1x00000000000000000000AA",
     window: Math.floor(Date.now() / HOUR),
   });
@@ -354,7 +396,9 @@ test("storage rejects corrupt categories and timestamps at the D1 boundary", asy
   await db.prepare("PRAGMA ignore_check_constraints = ON").run();
   const now = Date.now();
   await db
-    .prepare("INSERT INTO reports VALUES ('claude', 'bad', ?, ?, 'invalid')")
+    .prepare(
+      "INSERT INTO reports (provider, identity_hash, window, created_at, category) VALUES ('claude', 'bad', ?, ?, 'invalid')",
+    )
     .bind(Math.floor(now / HOUR), now)
     .run();
   let rejected = false;
@@ -367,11 +411,11 @@ test("storage rejects corrupt categories and timestamps at the D1 boundary", asy
   await db.prepare("DROP TABLE reports").run();
   await db
     .prepare(
-      "CREATE TABLE reports (provider TEXT, identity_hash TEXT, window INTEGER, created_at TEXT, category TEXT)",
+      "CREATE TABLE reports (provider TEXT, identity_hash TEXT, window INTEGER, created_at TEXT, category TEXT, model TEXT)",
     )
     .run();
   await db
-    .prepare("INSERT INTO reports VALUES ('claude', 'bad', ?, ?, 'slow')")
+    .prepare("INSERT INTO reports VALUES ('claude', 'bad', ?, ?, 'slow', NULL)")
     .bind(Math.floor(now / HOUR), String(now))
     .run();
   rejected = false;
@@ -381,4 +425,249 @@ test("storage rejects corrupt categories and timestamps at the D1 boundary", asy
     rejected = true;
   }
   expect(rejected).toBe(true);
+});
+
+test("additive model migration preserves old active and retracted rows", async () => {
+  const db = await database(false);
+  await db
+    .prepare(
+      "INSERT INTO reports VALUES ('claude', 'old', 100, ?, 'slow'), ('claude', 'undo', 100, ?, NULL)",
+    )
+    .bind(100 * HOUR, 100 * HOUR + 1)
+    .run();
+  await migrateModels(db);
+  expect(await loadReports(db, "claude", 100 * HOUR + 10)).toEqual([
+    { category: "slow", created_at: 100 * HOUR, model: null },
+    { category: null, created_at: 100 * HOUR + 1, model: null },
+  ]);
+  await saveReport(db, "claude", "old", "broken", 100 * HOUR + 10, "Claude Opus 5.5");
+  expect(await sessionReport(db, "claude", "old", 100 * HOUR + 20)).toEqual({
+    category: "broken",
+    model: "Claude Opus 5.5",
+  });
+  expect(await db.prepare("SELECT COUNT(*) AS total FROM reports").first<number>("total")).toBe(2);
+  const indexes = await db
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'reports' ORDER BY name",
+    )
+    .all<{ name: string }>();
+  expect(indexes.results).toEqual([
+    { name: "reports_provider_time" },
+    { name: "reports_retention" },
+  ]);
+  await saveReport(db, "zai", "new", "slow", 100 * HOUR + 30, "GLM-5.3");
+  await saveReport(db, "kimi", "new", "broken", 100 * HOUR + 40, "Kimi K3");
+  expect(await loadReports(db, "zai", 100 * HOUR + 50)).toEqual([
+    { category: "slow", created_at: 100 * HOUR + 30, model: "GLM-5.3" },
+  ]);
+  expect(await loadReports(db, "kimi", 100 * HOUR + 50)).toEqual([
+    { category: "broken", created_at: 100 * HOUR + 40, model: "Kimi K3" },
+  ]);
+});
+
+test("D1 model metadata changes preserve deduplication, timestamps and retraction", async () => {
+  const db = await database();
+  const now = 100 * HOUR + 10;
+  expect(await saveReport(db, "claude", "browser", "slow", now, "Claude Opus 5.5")).toBe("slow");
+  await saveReport(db, "claude", "browser", "nerfed", now + 10, "Claude Sonnet 5.5");
+  expect(await loadReports(db, "claude", now + 20)).toEqual([
+    { category: "nerfed", created_at: now, model: "Claude Sonnet 5.5" },
+  ]);
+  await saveReport(db, "claude", "browser", null, now + 30, "Claude Sonnet 5.5");
+  expect(await sessionReport(db, "claude", "browser", now + 40)).toEqual({
+    category: null,
+    model: "Claude Sonnet 5.5",
+  });
+  const retracted = await dashboardFromDatabase(db, "claude", "24h", now + 40);
+  expect(retracted.hourly).toBe(0);
+  await saveReport(db, "claude", "browser", "broken", now + 50);
+  expect(await sessionReport(db, "claude", "browser", now + 60)).toEqual({
+    category: "broken",
+    model: null,
+  });
+  expect(
+    await rejectionMessage(saveReport(db, "claude", "browser", "slow", now + 70, "GPT-6.1 Sol")),
+  ).toBe("Invalid report model");
+  expect(await loadReports(db, "claude", now + 80)).toEqual([
+    { category: "broken", created_at: now, model: null },
+  ]);
+  await db.prepare("UPDATE reports SET model = 'GPT-6.1 Sol'").run();
+  expect(await rejectionMessage(loadReports(db, "claude", now + 90))).toBe("Invalid stored model");
+  expect(await rejectionMessage(sessionReport(db, "claude", "browser", now + 90))).toBe(
+    "Invalid stored model",
+  );
+});
+
+test("every model filter keeps literal provider totals, baseline and verdict on real D1", async () => {
+  const db = await database();
+  const now = 100 * HOUR + HOUR / 2;
+  await saveReport(db, "claude", "history", "slow", 50 * HOUR);
+  await db.batch(
+    Array.from({ length: 120 }, (_value, index) =>
+      db
+        .prepare(
+          "INSERT INTO reports (provider, identity_hash, window, created_at, category, model) VALUES ('claude', ?, 99, ?, 'slow', ?)",
+        )
+        .bind(`baseline-${index}`, 99 * HOUR, index % 2 === 0 ? "Claude Opus 5.5" : null),
+    ),
+  );
+  await db.batch(
+    Array.from({ length: 24 }, (_value, index) =>
+      db
+        .prepare(
+          "INSERT INTO reports (provider, identity_hash, window, created_at, category, model) VALUES ('claude', ?, 100, ?, 'broken', ?)",
+        )
+        .bind(`current-${index}`, now - 10, index < 12 ? "Claude Sonnet 5.5" : null),
+    ),
+  );
+  for (const range of ["6h", "24h", "7d"] as const) {
+    for (const model of ["", "unspecified", ...providerModels.claude]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop
+      const dashboard = await dashboardFromDatabase(db, "claude", range, now, model);
+      expect({
+        baseline: dashboard.baseline,
+        hourly: dashboard.hourly,
+        verdict: dashboard.verdict,
+      }).toEqual({ baseline: 2.5, hourly: 24, verdict: "killed the vibe" });
+      expect(dashboard.model).toBe(model);
+      const counts = { broken: 0, slow: 0 };
+      for (const bucket of dashboard.buckets) {
+        counts.broken += bucket.broken;
+        counts.slow += bucket.slow;
+      }
+      const expected: Record<string, { broken: number; slow: number }> = {
+        "": { broken: 24, slow: range === "7d" ? 121 : 120 },
+        "Claude Opus 5.5": { broken: 0, slow: 60 },
+        "Claude Sonnet 5.5": { broken: 12, slow: 0 },
+        unspecified: { broken: 12, slow: range === "7d" ? 61 : 60 },
+      };
+      expect(counts).toEqual(expected[model] ?? { broken: 0, slow: 0 });
+    }
+  }
+});
+
+test("all model filters preserve provider insufficient-data and spike thresholds", () => {
+  const [provider] = providers;
+  const now = 100 * HOUR + HOUR / 2;
+  const historical = [
+    { category: "slow" as const, created_at: 50 * HOUR },
+    ...Array.from({ length: 120 }, () => ({
+      category: "slow" as const,
+      created_at: 99 * HOUR,
+      model: "Claude Opus 5.5",
+    })),
+  ];
+  for (const model of ["", "unspecified", ...providerModels.claude]) {
+    const insufficient = aggregate(
+      provider,
+      "24h",
+      [{ category: "broken", created_at: now, model: "Claude Opus 5.5" }],
+      now,
+      model,
+    );
+    expect({
+      baseline: insufficient.baseline,
+      hourly: insufficient.hourly,
+      verdict: insufficient.verdict,
+    }).toEqual({ baseline: null, hourly: 1, verdict: "insufficient community data" });
+    for (const [current, verdict] of [
+      [1, "no report spike"],
+      [10, "vibes are off"],
+      [20, "killed the vibe"],
+    ] as const) {
+      const dashboard = aggregate(
+        provider,
+        "24h",
+        [
+          ...historical,
+          ...Array.from({ length: current }, () => ({
+            category: "broken" as const,
+            created_at: now,
+            model: "Claude Sonnet 5.5",
+          })),
+        ],
+        now,
+        model,
+      );
+      expect({
+        baseline: dashboard.baseline,
+        hourly: dashboard.hourly,
+        verdict: dashboard.verdict,
+      }).toEqual({ baseline: 2.5, hourly: current, verdict });
+    }
+  }
+});
+
+test("HTTP model persistence, validation and challenge failure keep saved state", async () => {
+  const db = await database();
+  const bindings: Cloudflare.Env = {
+    DB: db,
+    REPORT_RATE_LIMIT: {
+      async limit() {
+        const success = await Promise.resolve(true);
+        return { success };
+      },
+    },
+    TURNSTILE_HOSTNAME: "vibedetector.net",
+    TURNSTILE_SITE_KEY: "0x4AAAAAAFROSyaakxb3TQIa",
+  };
+  const verify = successfulVerify;
+  const session = await handleApi(new Request("http://localhost/api/session/claude"), bindings);
+  const cookie = cookieHeader(session);
+  const window = Math.floor(Date.now() / HOUR);
+  const request = (category: string | null, model: unknown) =>
+    post(JSON.stringify({ category, model, token: "dummy", window }), { Cookie: cookie });
+  const response = await handleApi(request("slow", "Claude Opus 5.5"), bindings, verify);
+  const responseBody: unknown = await response.json();
+  expect(responseBody).toEqual({ category: "slow", model: "Claude Opus 5.5" });
+  const reload = await handleApi(
+    new Request("http://localhost/api/session/claude", { headers: { Cookie: cookie } }),
+    bindings,
+  );
+  const reloadBody: unknown = await reload.json();
+  expect(reloadBody).toEqual({
+    category: "slow",
+    model: "Claude Opus 5.5",
+    siteKey: "1x00000000000000000000AA",
+    window,
+  });
+  const switchResponse = await handleApi(request("broken", "Claude Sonnet 5.5"), bindings, verify);
+  const switchBody: unknown = await switchResponse.json();
+  expect(switchBody).toEqual({ category: "broken", model: "Claude Sonnet 5.5" });
+  for (const model of ["GPT-6.1 Sol", "unspecified", "", 42, {}]) {
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    const invalid = await handleApi(request("nerfed", model), bindings, verify);
+    expect(invalid.status).toBe(400);
+  }
+  const denied = await handleApi(request("slow", "Claude Opus 5.5"), bindings, async () =>
+    mockResponse({ success: false }),
+  );
+  expect(denied.status).toBe(403);
+  const persisted = await handleApi(
+    new Request("http://localhost/api/session/claude", { headers: { Cookie: cookie } }),
+    bindings,
+  );
+  const persistedBody: unknown = await persisted.json();
+  expect(persistedBody).toMatchObject({ category: "broken", model: "Claude Sonnet 5.5" });
+  const filtered = await handleApi(
+    new Request("http://localhost/api/providers/claude?model=Claude%20Opus%205.5"),
+    bindings,
+  );
+  const filteredBody: unknown = await filtered.json();
+  expect(filteredBody).toMatchObject({
+    hourly: 1,
+    model: "Claude Opus 5.5",
+    verdict: "insufficient community data",
+  });
+  const invalidFilter = await handleApi(
+    new Request("http://localhost/api/providers/claude?model=GPT-6.1%20Sol"),
+    bindings,
+  );
+  expect(invalidFilter.status).toBe(400);
+  const undo = await handleApi(request(null, "Claude Sonnet 5.5"), bindings, verify);
+  const undoBody: unknown = await undo.json();
+  expect(undoBody).toEqual({ category: null, model: "Claude Sonnet 5.5" });
+  const unspecified = await handleApi(request("slow", null), bindings, verify);
+  const unspecifiedBody: unknown = await unspecified.json();
+  expect(unspecifiedBody).toEqual({ category: "slow", model: null });
 });

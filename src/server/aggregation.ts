@@ -9,6 +9,7 @@ export function aggregate(
   range: Range,
   reports: Report[],
   now: number,
+  model = "",
 ): Dashboard {
   const { count, step } = ranges[range];
   const start = Math.floor(now / step) * step - count * step;
@@ -34,7 +35,9 @@ export function aggregate(
       baselineCount += 1;
     }
     const bucket = buckets[Math.floor((report.created_at - start) / step)];
-    if (bucket && report.created_at >= cutoff) {
+    const matchesModel =
+      model === "" || (model === "unspecified" ? !report.model : report.model === model);
+    if (bucket && report.created_at >= cutoff && matchesModel) {
       bucket[report.category] += 1;
     }
   }
@@ -51,5 +54,5 @@ export function aggregate(
       verdict = "vibes are off";
     }
   }
-  return { asOf: now, baseline, buckets, hourly, provider, range, verdict };
+  return { asOf: now, baseline, buckets, hourly, model, provider, range, verdict };
 }

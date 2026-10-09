@@ -1,4 +1,4 @@
-import { findProvider, isRange, providers } from "@/domain";
+import { findProvider, isModelFilter, isRange, providers } from "@/domain";
 import type { Dashboard, Overview, Range } from "@/domain";
 
 import { aggregate } from "./aggregation";
@@ -9,12 +9,13 @@ async function dashboardFromDatabase(
   id: string,
   range: Range,
   now: number,
+  model = "",
 ): Promise<Dashboard> {
   const provider = findProvider(id);
-  if (!provider || !isRange(range)) {
+  if (!provider || !isRange(range) || !isModelFilter(provider.id, model)) {
     throw new Error("Invalid dashboard query");
   }
-  return aggregate(provider, range, await loadReports(db, provider.id, now), now);
+  return aggregate(provider, range, await loadReports(db, provider.id, now), now, model);
 }
 
 async function overviewFromDatabase(db: D1Database, now: number): Promise<Overview[]> {
