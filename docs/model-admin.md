@@ -19,3 +19,5 @@ UI options use database response lists, not seed imports. Filter URL validation 
 Successful logout clears authenticated UI state immediately. Login/logout/expired-session transitions move keyboard focus to the new catalogue heading or key field. Malformed catalogue responses produce a visible error rather than an unchecked typed cast or render crash.
 
 Verify unauthenticated access, wrong/oversized keys, login limits, cookie signatures/expiry/rotation, CSRF, add/archive/reactivate, duplicate writes, seed non-overwrite, report rejection for archived models and continued historical filtering. Run existing full gates and independent reviews. PR #5 remains open and unmerged by user instruction. No remote migration, admin secret provisioning or deployment without approval.
+
+Local verification exercised the running Worker with an ephemeral test-only key: authenticated catalogue reads, creation, archive, public historical catalogue visibility and logout returning 401. Initial SQL seed entries were compared with `seeds/models.ts` in a fresh Miniflare database and all 55 names matched. These checks do not provision or verify production administration.
