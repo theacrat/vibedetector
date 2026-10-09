@@ -8,4 +8,6 @@ Keep key authentication, secure session, pending/error/focus handling and UUID o
 
 The combined review also closes PR #7 findings: optional blank provider logos use the existing initial fallback; provider/model toggle controls retain keyboard focus; read-only model UUIDs are available; a provider archived during report verification returns 404 without a write. Catalogue reorder swap/focus behavior is shared rather than independently copied between providers and models.
 
+The provider list is the sole authenticated dashboard content, not a second catalogue panel beneath every provider form. A provider editor includes exactly one provider and its model rows. Read-only UUID labels may be collapsed or small secondary text; primary labels and controls use human display names. Navigation and save feedback must remain readable at mobile widths.
+
 Review both PR #7 (`06774c9...c6f4bed`) and this rework against standards and their own specs. Fix every finding and repeat independent reviews until clean before merging this rework. Run exact-head build/format/zero-warning lint/types/full tests/browser/packaging gates. User requested merge, not deployment of this rework.
