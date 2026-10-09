@@ -1,8 +1,8 @@
-import { findProvider, isCategory, isRange } from "@/domain";
+import { isId, isCategory, isRange } from "@/domain";
 import type { Category, ProviderId } from "@/domain";
 
 import { handleAdmin } from "./admin";
-import { isModelName, loadActiveModels } from "./catalogue";
+import { loadProviders, resolveProvider, loadActiveModels } from "./catalogue";
 import { dashboardFromDatabase, overviewFromDatabase } from "./queries";
 import { ApiError, browserIdentity, challengeConfig, readJson, verifyChallenge } from "./security";
 import type { VerifyFetch } from "./security";
@@ -27,7 +27,7 @@ function parseReport(body: unknown): {
     typeof body !== "object" ||
     !("category" in body) ||
     (body.category !== null && !isCategory(body.category)) ||
-    ("model" in body && body.model !== null && !isModelName(body.model)) ||
+    ("model" in body && body.model !== null && !isId(body.model)) ||
     !("token" in body) ||
     typeof body.token !== "string" ||
     !body.token ||
@@ -123,10 +123,7 @@ async function providerApi(
     throw new ApiError(404, "Not found");
   }
   const { route, id } = match.groups;
-  const provider = findProvider(id ?? "");
-  if (!provider) {
-    throw new ApiError(404, "Unknown provider");
-  }
+  const provider = await resolveProvider(bindings.DB, id ?? "");
   if (request.method !== (route === "reports" ? "POST" : "GET")) {
     throw new ApiError(405, "Method not allowed");
   }
@@ -168,6 +165,12 @@ async function routeApi(
       throw new ApiError(405, "Method not allowed");
     }
     return json(await overviewFromDatabase(bindings.DB, now));
+  }
+  if (url.pathname === "/api/providers") {
+    if (request.method !== "GET") {
+      throw new ApiError(405, "Method not allowed");
+    }
+    return json(await loadProviders(bindings.DB, true));
   }
   return providerApi(request, bindings, verifyFetch, url, now);
 }

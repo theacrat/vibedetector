@@ -2,7 +2,17 @@
 // oxlint-disable-next-line import/no-nodejs-modules
 import { timingSafeEqual } from "node:crypto";
 
-import { loadModels, orderModels, parseModel } from "./catalogue";
+import { isId } from "@/domain";
+
+import {
+  loadModels,
+  loadProviders,
+  orderCatalogue,
+  parseModel,
+  parseProvider,
+  resolveProvider,
+  isModelName,
+} from "./catalogue";
 import { ApiError, readJson } from "./security";
 
 const COOKIE = "vd_admin";
@@ -109,54 +119,138 @@ async function login(
   );
 }
 
+function parseId(body: unknown): string {
+  if (!body || typeof body !== "object" || !("id" in body) || !isId(body.id)) {
+    throw new ApiError(400, "Invalid catalogue ID");
+  }
+  return body.id;
+}
+
+async function setCatalogueState(
+  db: D1Database,
+  table: "providers" | "models",
+  body: unknown,
+): Promise<void> {
+  const id = parseId(body);
+  if (
+    !body ||
+    typeof body !== "object" ||
+    !("active" in body) ||
+    typeof body.active !== "boolean"
+  ) {
+    throw new ApiError(400, "Invalid catalogue state");
+  }
+  const result = await db
+    .prepare(`UPDATE ${table} SET active = ? WHERE id = ?`)
+    .bind(body.active ? 1 : 0, id)
+    .run();
+  if (result.meta.changes === 0) {
+    throw new ApiError(404, "Unknown catalogue record");
+  }
+}
+
+async function writeProvider(db: D1Database, body: unknown, update: boolean): Promise<void> {
+  const provider = parseProvider(body);
+  if (update) {
+    const result = await db
+      .prepare(
+        "UPDATE providers SET slug = ?, name = ?, maker = ?, status = ?, statusLabel = ?, logo = ? WHERE id = ?",
+      )
+      .bind(
+        provider.slug,
+        provider.name,
+        provider.maker,
+        provider.status,
+        provider.statusLabel,
+        provider.logo,
+        parseId(body),
+      )
+      .run();
+    if (result.meta.changes === 0) {
+      throw new ApiError(404, "Unknown provider");
+    }
+  } else {
+    const result = await db
+      .prepare(
+        `INSERT INTO providers (id, slug, name, maker, status, statusLabel, logo, active, position) SELECT ?, ?, ?, ?, ?, ?, ?, 1, COALESCE(MAX(position), -1) + 1 FROM providers HAVING COUNT(*) < 256`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        provider.slug,
+        provider.name,
+        provider.maker,
+        provider.status,
+        provider.statusLabel,
+        provider.logo,
+      )
+      .run();
+    if (result.meta.changes === 0) {
+      throw new ApiError(400, "Catalogue limit is 256 providers");
+    }
+  }
+}
+
+async function writeModel(db: D1Database, body: unknown, update: boolean): Promise<void> {
+  if (update) {
+    const id = parseId(body);
+    if (!body || typeof body !== "object" || !("name" in body) || !isModelName(body.name)) {
+      throw new ApiError(400, "Invalid model");
+    }
+    const result = await db
+      .prepare("UPDATE models SET name = ? WHERE id = ?")
+      .bind(body.name, id)
+      .run();
+    if (result.meta.changes === 0) {
+      throw new ApiError(404, "Unknown model");
+    }
+  } else {
+    const model = parseModel(body);
+    await resolveProvider(db, model.provider, false);
+    const result = await db
+      .prepare(
+        `INSERT INTO models (id, provider, name, active, position) SELECT ?, ?, ?, 1, COALESCE(MAX(position), -1) + 1 FROM models WHERE provider = ? HAVING COUNT(*) < 256`,
+      )
+      .bind(crypto.randomUUID(), model.provider, model.name, model.provider)
+      .run();
+    if (result.meta.changes === 0) {
+      throw new ApiError(400, "Catalogue limit is 256 models per provider");
+    }
+  }
+}
+
 async function mutateCatalogue(
   path: string,
   body: unknown,
   bindings: Cloudflare.Env,
 ): Promise<Response> {
   const headers = { "Cache-Control": "no-store" };
-  if (path === "/api/admin/models/order") {
-    await orderModels(bindings.DB, body);
-    return Response.json(await loadModels(bindings.DB), { headers });
-  }
-  const model = parseModel(body);
-  if (path === "/api/admin/models") {
-    const result = await bindings.DB.prepare(
-      `INSERT OR IGNORE INTO models (provider, name, active, position)
-       SELECT ?, ?, 1, COALESCE(MAX(position), -1) + 1 FROM models WHERE provider = ?
-       HAVING COUNT(*) < 256`,
-    )
-      .bind(model.provider, model.name, model.provider)
-      .run();
-    if (
-      result.meta.changes === 0 &&
-      !(await bindings.DB.prepare("SELECT 1 FROM models WHERE provider = ? AND name = ?")
-        .bind(model.provider, model.name)
-        .first())
-    ) {
-      throw new ApiError(400, "Catalogue limit is 256 models per provider");
-    }
-  } else if (path === "/api/admin/models/state") {
-    if (
-      !body ||
-      typeof body !== "object" ||
-      !("active" in body) ||
-      typeof body.active !== "boolean"
-    ) {
-      throw new ApiError(400, "Invalid model state");
-    }
-    const result = await bindings.DB.prepare(
-      "UPDATE models SET active = ? WHERE provider = ? AND name = ?",
-    )
-      .bind(body.active ? 1 : 0, model.provider, model.name)
-      .run();
-    if (result.meta.changes === 0) {
-      throw new ApiError(404, "Unknown model");
-    }
-  } else {
+  const match =
+    /^\/api\/admin\/(?<table>providers|models)(?:\/(?<action>order|state|update))?$/u.exec(path);
+  if (!match?.groups) {
     throw new ApiError(404, "Not found");
   }
-  return Response.json(await loadModels(bindings.DB), { headers });
+  const table = match.groups["table"] === "providers" ? "providers" : "models";
+  const { action } = match.groups;
+  try {
+    if (action === "order") {
+      await orderCatalogue(bindings.DB, body, table);
+    } else if (action === "state") {
+      await setCatalogueState(bindings.DB, table, body);
+    } else if (table === "providers") {
+      await writeProvider(bindings.DB, body, action === "update");
+    } else {
+      await writeModel(bindings.DB, body, action === "update");
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+      throw new ApiError(409, "Catalogue value already exists");
+    }
+    throw error;
+  }
+  return Response.json(
+    table === "providers" ? await loadProviders(bindings.DB) : await loadModels(bindings.DB),
+    { headers },
+  );
 }
 
 async function handleAdmin(request: Request, bindings: Cloudflare.Env): Promise<Response> {
@@ -184,10 +278,13 @@ async function handleAdmin(request: Request, bindings: Cloudflare.Env): Promise<
   if (path === "/api/admin/models" && request.method === "GET") {
     return Response.json(await loadModels(bindings.DB), { headers });
   }
+  if (path === "/api/admin/providers" && request.method === "GET") {
+    return Response.json(await loadProviders(bindings.DB), { headers });
+  }
   if (request.method !== "POST") {
     throw new ApiError(405, "Method not allowed");
   }
-  const body = await readJson(request, path === "/api/admin/models/order" ? 262_144 : 4096);
+  const body = await readJson(request, path.endsWith("/order") ? 262_144 : 16_384);
   if (path === "/api/admin/logout") {
     return Response.json(
       { authenticated: false },

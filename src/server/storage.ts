@@ -1,7 +1,6 @@
 import type { Category, ProviderId } from "@/domain";
-import { isCategory } from "@/domain";
+import { isCategory, isId } from "@/domain";
 
-import { isModelName } from "./catalogue";
 import { ApiError } from "./security";
 
 const HOUR = 3_600_000;
@@ -33,7 +32,7 @@ function readSession(row: unknown): SessionReport {
     !row ||
     typeof row !== "object" ||
     !("model" in row) ||
-    (row.model !== null && !isModelName(row.model))
+    (row.model !== null && !isId(row.model))
   ) {
     throw new Error("Invalid stored model");
   }
@@ -81,15 +80,16 @@ async function saveReport(
   // oxlint-disable-next-line unicorn/no-null
   model: string | null = null,
 ): Promise<Category | null> {
-  if (model !== null && !isModelName(model)) {
+  if (model !== null && !isId(model)) {
     throw new ApiError(400, "Invalid report model");
   }
   const row = await db
     .prepare(`INSERT INTO reports (provider, identity_hash, window, created_at, category, model)
     SELECT ?1, ?2, ?3, ?4, ?5, ?6
-    WHERE ?6 IS NULL
-      OR EXISTS (SELECT 1 FROM models WHERE provider = ?1 AND name = ?6 AND active = 1)
-      OR EXISTS (SELECT 1 FROM reports WHERE provider = ?1 AND identity_hash = ?2 AND window = ?3 AND model = ?6 AND (?5 IS NULL OR category IS NOT NULL))
+    WHERE EXISTS (SELECT 1 FROM providers WHERE id = ?1 AND active = 1) AND (
+      ?6 IS NULL
+      OR EXISTS (SELECT 1 FROM models WHERE provider = ?1 AND id = ?6 AND active = 1)
+      OR EXISTS (SELECT 1 FROM reports WHERE provider = ?1 AND identity_hash = ?2 AND window = ?3 AND model = ?6 AND (?5 IS NULL OR category IS NOT NULL)))
     ON CONFLICT (provider, identity_hash, window) DO UPDATE SET category = excluded.category, model = excluded.model
     RETURNING category, model`)
     .bind(provider, identity, Math.floor(now / HOUR), now, category, model)

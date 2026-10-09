@@ -1,6 +1,7 @@
 import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server";
 
 import { handleApi } from "./server/api";
+import { sitemap } from "./server/sitemap";
 import { retainReports } from "./server/storage";
 
 const start = createStartHandler(defaultStreamHandler);
@@ -8,6 +9,9 @@ const start = createStartHandler(defaultStreamHandler);
 export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
+    if (path === "/sitemap.xml") {
+      return sitemap(env.DB, new URL(request.url).origin);
+    }
     if (path === "/api" || path.startsWith("/api/")) {
       return handleApi(request, env);
     }

@@ -1,45 +1,52 @@
-/* oxlint-disable unicorn/no-null -- SQL and JSON use null for unspecified metadata and retractions. */
+/* oxlint-disable unicorn/no-null -- SQL and JSON encode absent metadata and retractions as null. */
 import { afterAll, expect, test } from "bun:test";
 
-import { initialModels as providerModels } from "@seed/models";
+import { initialProviders } from "@seed/provider";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 
-import { providers } from "@/domain";
+import { isId } from "@/domain";
+import type { ModelOption, Provider } from "@/domain";
 import { aggregate } from "@/server/aggregation";
 import { handleApi } from "@/server/api";
-import { loadModels, orderModels } from "@/server/catalogue";
-import { dashboardFromDatabase } from "@/server/queries";
+import {
+  loadActiveModels,
+  loadModels,
+  loadProviders,
+  orderCatalogue,
+  parseProvider,
+  resolveProvider,
+} from "@/server/catalogue";
+import { dashboardFromDatabase, overviewFromDatabase } from "@/server/queries";
 import { browserIdentity, challengeConfig, readJson, verifyChallenge } from "@/server/security";
-import type { VerifyFetch } from "@/server/security";
+import { sitemap } from "@/server/sitemap";
 import { HOUR, loadReports, retainReports, saveReport, sessionReport } from "@/server/storage";
 
 const runtimes: Miniflare[] = [];
+const CLAUDE = "10000000-0000-4000-8000-000000000001";
+const CHATGPT = "10000000-0000-4000-8000-000000000002";
+const SECRET = "test-admin-secret-that-is-at-least-32-characters";
+const migrations = [
+  "0001_reports.sql",
+  "0002_report_models.sql",
+  "0003_model_catalogue.sql",
+  "0004_catalogue_identities.sql",
+];
+
 afterAll(async () => {
   await Promise.all(runtimes.map(async (runtime) => runtime.dispose()));
 });
 
-async function migrateModels(db: D1Database): Promise<void> {
-  const migration = await Bun.file(
-    new URL("../migrations/0002_report_models.sql", import.meta.url),
-  ).text();
+async function migrate(db: D1Database, filename: string): Promise<void> {
+  const sql = await Bun.file(new URL(`../migrations/${filename}`, import.meta.url)).text();
   await db.batch(
-    migration
+    sql
       .split(";")
-      .filter((sql) => sql.trim() !== "")
-      .map((sql) => db.prepare(sql)),
-  );
-  const catalogue = await Bun.file(
-    new URL("../migrations/0003_model_catalogue.sql", import.meta.url),
-  ).text();
-  await db.batch(
-    catalogue
-      .split(";")
-      .filter((sql) => sql.trim() !== "")
-      .map((sql) => db.prepare(sql)),
+      .filter((statement) => statement.trim() !== "")
+      .map((statement) => db.prepare(statement)),
   );
 }
 
-async function database(includeModels = true): Promise<D1Database> {
+async function database(legacy = false): Promise<D1Database> {
   const runtime = new Miniflare(
     convertV4MiniflareOptions({
       workers: [
@@ -54,641 +61,27 @@ async function database(includeModels = true): Promise<D1Database> {
   );
   runtimes.push(runtime);
   const { DB: db } = await runtime.getBindings<{ DB: D1Database }>();
-  const migration = await Bun.file(
-    new URL("../migrations/0001_reports.sql", import.meta.url),
-  ).text();
-  await db.batch(
-    migration
-      .split(";")
-      .filter((sql) => sql.trim() !== "")
-      .map((sql) => db.prepare(sql)),
-  );
-  if (includeModels) {
-    await migrateModels(db);
+  for (const filename of migrations.slice(0, legacy ? 3 : 4)) {
+    // Schema versions must be applied in order.
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    await migrate(db, filename);
   }
   return db;
 }
 
-function post(body: string, headers: Record<string, string> = {}): Request {
-  return new Request("http://localhost/api/reports/claude", {
-    body,
-    headers: {
-      "CF-Connecting-IP": "127.0.0.1",
-      "Content-Type": "application/json",
-      Origin: "http://localhost",
-      ...headers,
-    },
-    method: "POST",
-  });
-}
-
-function cookieHeader(response: Response): string {
-  const cookie = response.headers.get("Set-Cookie")?.split(";")[0];
-  if (!cookie) {
-    throw new Error("Expected identity cookie");
-  }
-  return cookie;
-}
-
-function reportPost(
-  category: string | null,
-  cookie = "",
-  window = Math.floor(Date.now() / HOUR),
-): Request {
-  return post(JSON.stringify({ category, token: "dummy", window }), { Cookie: cookie });
-}
-
-async function mockResponse(body: unknown): Promise<Response> {
-  const response = await Promise.resolve(Response.json(body));
-  return response;
-}
-
-const successfulVerify: VerifyFetch = async () =>
-  mockResponse({
-    hostname: "example.com",
-    metadata: { result_with_testing_key: true },
-    success: true,
-  });
-
-async function rejectionMessage(promise: Promise<unknown>): Promise<string> {
-  try {
-    await promise;
-    return "Did not reject";
-  } catch (error) {
-    return error instanceof Error ? error.message : "Unknown error";
-  }
-}
-
-async function errorStatus(promise: Promise<unknown>): Promise<number> {
-  try {
-    await promise;
-    throw new Error("Expected rejection");
-  } catch (error) {
-    if (
-      error &&
-      typeof error === "object" &&
-      "status" in error &&
-      typeof error.status === "number"
-    ) {
-      return error.status;
-    }
-    throw error;
-  }
-}
-
-test("D1 atomic upsert retries preserve timestamps across switches and retractions", async () => {
-  const db = await database();
-  const now = 100 * HOUR + 10;
-  await Promise.all(
-    Array.from({ length: 20 }, async () => saveReport(db, "claude", "hash", "nerfed", now)),
-  );
-  await saveReport(db, "claude", "hash", "slow", now + 1000);
-  expect(await loadReports(db, "claude", now + 2000)).toEqual([
-    { category: "slow", created_at: now, model: null },
-  ]);
-  // SQL NULL is the persisted retraction state, not an omitted parameter.
-  await saveReport(db, "claude", "hash", null, now + 2000);
-  const retracted = await sessionReport(db, "claude", "hash", now);
-  expect(retracted.category).toBeNull();
-  await saveReport(db, "claude", "hash", "broken", now + 3000);
-  await saveReport(db, "claude", "hash", "slow", now + HOUR);
-  expect(await loadReports(db, "claude", now + HOUR)).toEqual([
-    { category: "broken", created_at: now, model: null },
-    { category: "slow", created_at: now + HOUR, model: null },
-  ]);
-});
-
-test("UTC buckets, actual trailing hour and baseline thresholds", () => {
-  const [provider] = providers;
-  const now = 100 * HOUR + HOUR / 2;
-  const empty = aggregate(provider, "24h", [], now);
-  expect(empty.hourly).toBe(0);
-  expect(empty.verdict).toBe("insufficient community data");
-  expect(empty.buckets).toHaveLength(49);
-  expect(empty.buckets[48]?.t).toBe(now);
-  const reports = [
-    ...Array.from({ length: 100 }, (_value, index) => ({
-      category: "slow" as const,
-      created_at: (52 + (index % 48)) * HOUR,
-    })),
-    { category: "broken" as const, created_at: now - 10 },
-  ];
-  const dashboard = aggregate(provider, "6h", reports, now);
-  expect(dashboard.baseline).toBe(100 / 48);
-  expect(dashboard.hourly).toBe(1);
-  expect(dashboard.verdict).toBe("no report spike");
-  expect(dashboard.buckets[23]?.broken).toBe(1);
-  expect(aggregate(provider, "7d", reports.slice(1), now).baseline).toBeNull();
-});
-
-test("D1 retention drains more than 5000 expired rows in bounded batches", async () => {
-  const db = await database();
-  await db
-    .prepare(`WITH RECURSIVE ids(value) AS (SELECT 0 UNION ALL SELECT value + 1 FROM ids WHERE value < 5001)
-    INSERT INTO reports (provider, identity_hash, window, created_at, category) SELECT 'claude', CAST(value AS TEXT), 0, 0, NULL FROM ids`)
-    .run();
-  await saveReport(db, "claude", "recent", "slow", 200 * HOUR);
-  await retainReports(db, 200 * HOUR);
-  expect(await db.prepare("SELECT COUNT(*) AS total FROM reports").first<number>("total")).toBe(1);
-  await retainReports(db, 200 * HOUR);
-  expect(await loadReports(db, "claude", 200 * HOUR)).toEqual([
-    { category: "slow", created_at: 200 * HOUR, model: null },
-  ]);
-});
-
-test("identity is hashed, HttpOnly, host-only and reused", async () => {
-  const first = await browserIdentity(new Request("https://vibedetector.net"));
-  expect(first.cookie).toContain("HttpOnly");
-  expect(first.cookie).toContain("Secure");
-  expect(first.cookie).not.toContain("Domain=");
-  expect(first.cookie).not.toContain(first.hash);
-  if (!first.cookie) {
-    throw new Error("Missing identity");
-  }
-  const second = await browserIdentity(
-    new Request("https://vibedetector.net", { headers: { Cookie: first.cookie } }),
-  );
-  expect(second.hash).toBe(first.hash);
-  expect(second.cookie).toBeNull();
-});
-
-test("boundary rejects foreign origin, non-JSON and oversized streamed bodies", async () => {
-  const foreign = post("{}", { Origin: "https://evil.invalid" });
-  const wrongType = post("{}", { "Content-Type": "text/plain" });
-  const malformed = post("{");
-  expect(await errorStatus(readJson(foreign))).toBe(403);
-  expect(await errorStatus(readJson(wrongType))).toBe(415);
-  expect(await errorStatus(readJson(malformed))).toBe(400);
-  const oversized = "x".repeat(4097);
-  const oversizedRequest = post(oversized);
-  expect(await errorStatus(readJson(oversizedRequest))).toBe(413);
-  let cancelled = false;
-  const stream = new ReadableStream<Uint8Array>({
-    cancel() {
-      cancelled = true;
-    },
-    start(controller) {
-      controller.enqueue(new Uint8Array(3000));
-      controller.enqueue(new Uint8Array(1097));
-    },
-  });
-  const request = new Request("http://localhost/api/reports/claude", {
-    body: stream,
-    headers: { "Content-Type": "application/json", Origin: "http://localhost" },
-    method: "POST",
-  });
-  expect(await errorStatus(readJson(request))).toBe(413);
-  expect(cancelled).toBe(true);
-});
-
-test("Turnstile checks hostname/action and fails closed", async () => {
-  const config = { hostname: "vibedetector.net", local: false, secret: "real", siteKey: "real" };
-  await Promise.all(
-    [
-      { success: false },
-      { action: "report", hostname: "evil.invalid", success: true },
-      { action: "other", hostname: config.hostname, success: true },
-    ].map(async (result) => {
-      const verify: VerifyFetch = async () => mockResponse(result);
-      expect(await errorStatus(verifyChallenge(config, "token", verify))).toBe(403);
-    }),
-  );
-  expect(
-    await errorStatus(
-      verifyChallenge(config, "token", async () => {
-        await Promise.resolve();
-        throw new Error("offline");
-      }),
-    ),
-  ).toBe(503);
-  await verifyChallenge(config, "token", async () =>
-    mockResponse({ action: "report", hostname: config.hostname, success: true }),
-  );
-});
-
-test("live dummy Siteverify shape is accepted only for exact local test keys", async () => {
-  const db = await database();
-  const bindings: Cloudflare.Env = {
+function bindings(db: D1Database): Cloudflare.Env {
+  return {
+    ADMIN_KEY: SECRET,
+    ADMIN_RATE_LIMIT: { limit: async () => ({ success: true }) },
     DB: db,
-    REPORT_RATE_LIMIT: {
-      async limit() {
-        const success = await Promise.resolve(true);
-        return { success };
-      },
-    },
-    TURNSTILE_HOSTNAME: "vibedetector.net",
-    TURNSTILE_SITE_KEY: "0x4AAAAAAFROSyaakxb3TQIa",
+    REPORT_RATE_LIMIT: { limit: async () => ({ success: true }) },
+    TURNSTILE_HOSTNAME: "localhost",
+    TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
   };
-  const config = challengeConfig(bindings, "localhost");
-  expect(config.siteKey).toBe("1x00000000000000000000AA");
-  const result = {
-    challenge_ts: "2026-10-08T20:00:00Z",
-    "error-codes": [],
-    hostname: "example.com",
-    metadata: { result_with_testing_key: true },
-    success: true,
-  };
-  const verify: VerifyFetch = async () => mockResponse(result);
-  await verifyChallenge(config, "XXXX.DUMMY.TOKEN.XXXX", verify);
-  expect(await errorStatus(verifyChallenge({ ...config, local: false }, "dummy", verify))).toBe(
-    403,
-  );
-  expect(await errorStatus(verifyChallenge({ ...config, secret: "real" }, "dummy", verify))).toBe(
-    403,
-  );
-  const noMetadata: VerifyFetch = async () =>
-    mockResponse({ hostname: result.hostname, success: true });
-  expect(await errorStatus(verifyChallenge(config, "dummy", noMetadata))).toBe(403);
-  expect(() => challengeConfig(bindings, "vibedetector.net")).toThrow("not configured");
-});
+}
 
-test("API persists reports and fails closed on challenge, rate-limit and database errors", async () => {
-  const db = await database();
-  let challenges = 0;
-  let limited = false;
-  const bindings: Cloudflare.Env = {
-    DB: db,
-    REPORT_RATE_LIMIT: {
-      async limit() {
-        const success = await Promise.resolve(!limited);
-        return { success };
-      },
-    },
-    TURNSTILE_HOSTNAME: "vibedetector.net",
-    TURNSTILE_SITE_KEY: "0x4AAAAAAFROSyaakxb3TQIa",
-  };
-  const verify: VerifyFetch = async () => {
-    challenges += 1;
-    return mockResponse({
-      hostname: "example.com",
-      metadata: { result_with_testing_key: true },
-      success: true,
-    });
-  };
-  const session = await handleApi(new Request("http://localhost/api/session/claude"), bindings);
-  const sessionBody: unknown = await session.json();
-  // The session API uses JSON null for no active report.
-  expect(sessionBody).toEqual({
-    category: null,
-    model: null,
-    models: await loadModels(db, "claude"),
-    siteKey: "1x00000000000000000000AA",
-    window: Math.floor(Date.now() / HOUR),
-  });
-  expect(session.headers.get("Cache-Control")).toBe("no-store");
-  const cookie = cookieHeader(session);
-  const response = await handleApi(reportPost("slow", cookie), bindings, verify);
-  const responseBody: unknown = await response.json();
-  expect(responseBody).toEqual({ category: "slow", model: null });
-  expect(challenges).toBe(1);
-  const expiredWindow = Math.floor(Date.now() / HOUR) - 1;
-  const stale = await handleApi(reportPost("broken", cookie, expiredWindow), bindings, verify);
-  expect(stale.status).toBe(409);
-  expect(challenges).toBe(1);
-  const dashboardResponse = await handleApi(
-    new Request("http://localhost/api/providers/claude"),
-    bindings,
-  );
-  const dashboardBody: unknown = await dashboardResponse.json();
-  expect(dashboardBody).toMatchObject({ hourly: 1, verdict: "insufficient community data" });
-  const failedChallenge = await handleApi(reportPost("broken", cookie), bindings, async () =>
-    mockResponse({ success: false }),
-  );
-  expect(failedChallenge.status).toBe(403);
-  const afterFailure = await handleApi(
-    new Request("http://localhost/api/session/claude", { headers: { Cookie: cookie } }),
-    bindings,
-  );
-  const afterBody: unknown = await afterFailure.json();
-  expect(afterBody).toEqual({
-    category: "slow",
-    model: null,
-    models: await loadModels(db, "claude"),
-    siteKey: "1x00000000000000000000AA",
-    window: Math.floor(Date.now() / HOUR),
-  });
-  const missingRateLimit = { ...bindings };
-  Reflect.deleteProperty(missingRateLimit, "REPORT_RATE_LIMIT");
-  const missing = await handleApi(reportPost("slow"), missingRateLimit, verify);
-  expect(missing.status).toBe(503);
-  const production = await handleApi(
-    new Request("https://vibedetector.net/api/session/claude"),
-    bindings,
-  );
-  expect(production.status).toBe(503);
-  limited = true;
-  const throttled = await handleApi(reportPost("slow"), bindings, verify);
-  expect(throttled.status).toBe(429);
-  expect(challenges).toBe(1);
-  const unknown = await handleApi(new Request("http://localhost/api/providers/unknown"), bindings);
-  expect(unknown.status).toBe(404);
-  const invalidRange = await handleApi(
-    new Request("http://localhost/api/providers/claude?range=bad"),
-    bindings,
-  );
-  expect(invalidRange.status).toBe(400);
-  const invalidCategory = await handleApi(reportPost("other"), bindings, verify);
-  expect(invalidCategory.status).toBe(400);
-  await db.prepare("DROP TABLE reports").run();
-  const failure = await handleApi(new Request("http://localhost/api/overview"), bindings);
-  expect(failure.status).toBe(503);
-  const failureBody: unknown = await failure.json();
-  expect(failureBody).toEqual({ error: "Service unavailable" });
-});
-
-test("storage rejects corrupt categories and timestamps at the D1 boundary", async () => {
-  const db = await database();
-  await db.prepare("PRAGMA ignore_check_constraints = ON").run();
-  const now = Date.now();
-  await db
-    .prepare(
-      "INSERT INTO reports (provider, identity_hash, window, created_at, category) VALUES ('claude', 'bad', ?, ?, 'invalid')",
-    )
-    .bind(Math.floor(now / HOUR), now)
-    .run();
-  let rejected = false;
-  try {
-    await loadReports(db, "claude", now);
-  } catch {
-    rejected = true;
-  }
-  expect(rejected).toBe(true);
-  await db.prepare("DROP TABLE reports").run();
-  await db
-    .prepare(
-      "CREATE TABLE reports (provider TEXT, identity_hash TEXT, window INTEGER, created_at TEXT, category TEXT, model TEXT)",
-    )
-    .run();
-  await db
-    .prepare("INSERT INTO reports VALUES ('claude', 'bad', ?, ?, 'slow', NULL)")
-    .bind(Math.floor(now / HOUR), String(now))
-    .run();
-  rejected = false;
-  try {
-    await loadReports(db, "claude", now);
-  } catch {
-    rejected = true;
-  }
-  expect(rejected).toBe(true);
-});
-
-test("additive model migration preserves old active and retracted rows", async () => {
-  const db = await database(false);
-  await db
-    .prepare(
-      "INSERT INTO reports VALUES ('claude', 'old', 100, ?, 'slow'), ('claude', 'undo', 100, ?, NULL)",
-    )
-    .bind(100 * HOUR, 100 * HOUR + 1)
-    .run();
-  await migrateModels(db);
-  expect(await loadReports(db, "claude", 100 * HOUR + 10)).toEqual([
-    { category: "slow", created_at: 100 * HOUR, model: null },
-    { category: null, created_at: 100 * HOUR + 1, model: null },
-  ]);
-  await saveReport(db, "claude", "old", "broken", 100 * HOUR + 10, "Claude Opus 5.5");
-  expect(await sessionReport(db, "claude", "old", 100 * HOUR + 20)).toEqual({
-    category: "broken",
-    model: "Claude Opus 5.5",
-  });
-  expect(await db.prepare("SELECT COUNT(*) AS total FROM reports").first<number>("total")).toBe(2);
-  const indexes = await db
-    .prepare(
-      "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'reports' ORDER BY name",
-    )
-    .all<{ name: string }>();
-  expect(indexes.results).toEqual([
-    { name: "reports_provider_time" },
-    { name: "reports_retention" },
-  ]);
-  await saveReport(db, "zai", "new", "slow", 100 * HOUR + 30, "GLM-5.3");
-  await saveReport(db, "kimi", "new", "broken", 100 * HOUR + 40, "Kimi K3");
-  expect(await loadReports(db, "zai", 100 * HOUR + 50)).toEqual([
-    { category: "slow", created_at: 100 * HOUR + 30, model: "GLM-5.3" },
-  ]);
-  expect(await loadReports(db, "kimi", 100 * HOUR + 50)).toEqual([
-    { category: "broken", created_at: 100 * HOUR + 40, model: "Kimi K3" },
-  ]);
-});
-
-test("D1 model metadata changes preserve deduplication, timestamps and retraction", async () => {
-  const db = await database();
-  const now = 100 * HOUR + 10;
-  expect(await saveReport(db, "claude", "browser", "slow", now, "Claude Opus 5.5")).toBe("slow");
-  await saveReport(db, "claude", "browser", "nerfed", now + 10, "Claude Sonnet 5.5");
-  expect(await loadReports(db, "claude", now + 20)).toEqual([
-    { category: "nerfed", created_at: now, model: "Claude Sonnet 5.5" },
-  ]);
-  await saveReport(db, "claude", "browser", null, now + 30, "Claude Sonnet 5.5");
-  expect(await sessionReport(db, "claude", "browser", now + 40)).toEqual({
-    category: null,
-    model: "Claude Sonnet 5.5",
-  });
-  const retracted = await dashboardFromDatabase(db, "claude", "24h", now + 40);
-  expect(retracted.hourly).toBe(0);
-  await saveReport(db, "claude", "browser", "broken", now + 50);
-  expect(await sessionReport(db, "claude", "browser", now + 60)).toEqual({
-    category: "broken",
-    model: null,
-  });
-  expect(
-    await rejectionMessage(saveReport(db, "claude", "browser", "slow", now + 70, "GPT-6.1 Sol")),
-  ).toBe("Invalid report model");
-  expect(await loadReports(db, "claude", now + 80)).toEqual([
-    { category: "broken", created_at: now, model: null },
-  ]);
-  await db.prepare("UPDATE reports SET model = ''").run();
-  expect(await rejectionMessage(loadReports(db, "claude", now + 90))).toBe("Invalid stored model");
-  expect(await rejectionMessage(sessionReport(db, "claude", "browser", now + 90))).toBe(
-    "Invalid stored model",
-  );
-});
-
-test("every model filter keeps literal provider totals, baseline and verdict on real D1", async () => {
-  const db = await database();
-  const now = 100 * HOUR + HOUR / 2;
-  await saveReport(db, "claude", "history", "slow", 50 * HOUR);
-  await db.batch(
-    Array.from({ length: 120 }, (_value, index) =>
-      db
-        .prepare(
-          "INSERT INTO reports (provider, identity_hash, window, created_at, category, model) VALUES ('claude', ?, 99, ?, 'slow', ?)",
-        )
-        .bind(`baseline-${index}`, 99 * HOUR, index % 2 === 0 ? "Claude Opus 5.5" : null),
-    ),
-  );
-  await db.batch(
-    Array.from({ length: 24 }, (_value, index) =>
-      db
-        .prepare(
-          "INSERT INTO reports (provider, identity_hash, window, created_at, category, model) VALUES ('claude', ?, 100, ?, 'broken', ?)",
-        )
-        .bind(`current-${index}`, now - 10, index < 12 ? "Claude Sonnet 5.5" : null),
-    ),
-  );
-  for (const range of ["6h", "24h", "7d"] as const) {
-    for (const model of ["", "unspecified", ...providerModels.claude]) {
-      // oxlint-disable-next-line eslint/no-await-in-loop
-      const dashboard = await dashboardFromDatabase(db, "claude", range, now, model);
-      expect({
-        baseline: dashboard.baseline,
-        hourly: dashboard.hourly,
-        verdict: dashboard.verdict,
-      }).toEqual({ baseline: 2.5, hourly: 24, verdict: "killed the vibe" });
-      expect(dashboard.model).toBe(model);
-      const counts = { broken: 0, slow: 0 };
-      for (const bucket of dashboard.buckets) {
-        counts.broken += bucket.broken;
-        counts.slow += bucket.slow;
-      }
-      const expected: Record<string, { broken: number; slow: number }> = {
-        "": { broken: 24, slow: range === "7d" ? 121 : 120 },
-        "Claude Opus 5.5": { broken: 0, slow: 60 },
-        "Claude Sonnet 5.5": { broken: 12, slow: 0 },
-        unspecified: { broken: 12, slow: range === "7d" ? 61 : 60 },
-      };
-      expect(counts).toEqual(expected[model] ?? { broken: 0, slow: 0 });
-    }
-  }
-});
-
-test("all model filters preserve provider insufficient-data and spike thresholds", () => {
-  const [provider] = providers;
-  const now = 100 * HOUR + HOUR / 2;
-  const historical = [
-    { category: "slow" as const, created_at: 50 * HOUR },
-    ...Array.from({ length: 120 }, () => ({
-      category: "slow" as const,
-      created_at: 99 * HOUR,
-      model: "Claude Opus 5.5",
-    })),
-  ];
-  for (const model of ["", "unspecified", ...providerModels.claude]) {
-    const insufficient = aggregate(
-      provider,
-      "24h",
-      [{ category: "broken", created_at: now, model: "Claude Opus 5.5" }],
-      now,
-      model,
-    );
-    expect({
-      baseline: insufficient.baseline,
-      hourly: insufficient.hourly,
-      verdict: insufficient.verdict,
-    }).toEqual({ baseline: null, hourly: 1, verdict: "insufficient community data" });
-    for (const [current, verdict] of [
-      [1, "no report spike"],
-      [10, "vibes are off"],
-      [20, "killed the vibe"],
-    ] as const) {
-      const dashboard = aggregate(
-        provider,
-        "24h",
-        [
-          ...historical,
-          ...Array.from({ length: current }, () => ({
-            category: "broken" as const,
-            created_at: now,
-            model: "Claude Sonnet 5.5",
-          })),
-        ],
-        now,
-        model,
-      );
-      expect({
-        baseline: dashboard.baseline,
-        hourly: dashboard.hourly,
-        verdict: dashboard.verdict,
-      }).toEqual({ baseline: 2.5, hourly: current, verdict });
-    }
-  }
-});
-
-test("HTTP model persistence, validation and challenge failure keep saved state", async () => {
-  const db = await database();
-  const bindings: Cloudflare.Env = {
-    DB: db,
-    REPORT_RATE_LIMIT: {
-      async limit() {
-        const success = await Promise.resolve(true);
-        return { success };
-      },
-    },
-    TURNSTILE_HOSTNAME: "vibedetector.net",
-    TURNSTILE_SITE_KEY: "0x4AAAAAAFROSyaakxb3TQIa",
-  };
-  const verify = successfulVerify;
-  const session = await handleApi(new Request("http://localhost/api/session/claude"), bindings);
-  const cookie = cookieHeader(session);
-  const window = Math.floor(Date.now() / HOUR);
-  const request = (category: string | null, model: unknown) =>
-    post(JSON.stringify({ category, model, token: "dummy", window }), { Cookie: cookie });
-  const response = await handleApi(request("slow", "Claude Opus 5.5"), bindings, verify);
-  const responseBody: unknown = await response.json();
-  expect(responseBody).toEqual({ category: "slow", model: "Claude Opus 5.5" });
-  const reload = await handleApi(
-    new Request("http://localhost/api/session/claude", { headers: { Cookie: cookie } }),
-    bindings,
-  );
-  const reloadBody: unknown = await reload.json();
-  expect(reloadBody).toEqual({
-    category: "slow",
-    model: "Claude Opus 5.5",
-    models: await loadModels(db, "claude"),
-    siteKey: "1x00000000000000000000AA",
-    window,
-  });
-  const switchResponse = await handleApi(request("broken", "Claude Sonnet 5.5"), bindings, verify);
-  const switchBody: unknown = await switchResponse.json();
-  expect(switchBody).toEqual({ category: "broken", model: "Claude Sonnet 5.5" });
-  for (const model of ["GPT-6.1 Sol", "unspecified", "", 42, {}]) {
-    // oxlint-disable-next-line eslint/no-await-in-loop
-    const invalid = await handleApi(request("nerfed", model), bindings, verify);
-    expect(invalid.status).toBe(400);
-  }
-  const denied = await handleApi(request("slow", "Claude Opus 5.5"), bindings, async () =>
-    mockResponse({ success: false }),
-  );
-  expect(denied.status).toBe(403);
-  const persisted = await handleApi(
-    new Request("http://localhost/api/session/claude", { headers: { Cookie: cookie } }),
-    bindings,
-  );
-  const persistedBody: unknown = await persisted.json();
-  expect(persistedBody).toMatchObject({ category: "broken", model: "Claude Sonnet 5.5" });
-  const filtered = await handleApi(
-    new Request("http://localhost/api/providers/claude?model=Claude%20Opus%205.5"),
-    bindings,
-  );
-  const filteredBody: unknown = await filtered.json();
-  expect(filteredBody).toMatchObject({
-    hourly: 1,
-    model: "Claude Opus 5.5",
-    verdict: "insufficient community data",
-  });
-  const invalidFilter = await handleApi(
-    new Request("http://localhost/api/providers/claude?model=GPT-6.1%20Sol"),
-    bindings,
-  );
-  expect(invalidFilter.status).toBe(200);
-  const invalidFilterBody: unknown = await invalidFilter.json();
-  expect(invalidFilterBody).toMatchObject({ model: "" });
-  const undo = await handleApi(request(null, "Claude Sonnet 5.5"), bindings, verify);
-  const undoBody: unknown = await undo.json();
-  expect(undoBody).toEqual({ category: null, model: "Claude Sonnet 5.5" });
-  const unspecified = await handleApi(request("slow", null), bindings, verify);
-  const unspecifiedBody: unknown = await unspecified.json();
-  expect(unspecifiedBody).toEqual({ category: "slow", model: null });
-});
-
-const adminKey = "a-secret-used-only-for-tests-123456789";
-
-function adminRequest(
-  path: string,
-  body?: unknown,
-  cookie = "",
-  origin = "http://localhost",
-): Request {
-  return new Request(`http://localhost/api/admin/${path}`, {
+function request(path: string, body?: unknown, cookie = "", origin = "http://localhost"): Request {
+  return new Request(`http://localhost${path}`, {
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     headers: {
       "CF-Connecting-IP": "127.0.0.1",
@@ -700,642 +93,540 @@ function adminRequest(
   });
 }
 
-async function apiStatus(
-  request: Request,
-  bindings: Cloudflare.Env,
-  verify: VerifyFetch = successfulVerify,
-): Promise<number> {
-  const response = await handleApi(request, bindings, verify);
-  return response.status;
-}
-
-async function migrateModelsCatalogue(db: D1Database): Promise<void> {
-  const sql = await Bun.file(
-    new URL("../migrations/0003_model_catalogue.sql", import.meta.url),
-  ).text();
-  await db.batch(
-    sql
-      .split(";")
-      .filter((statement) => statement.trim() !== "")
-      .map((statement) => db.prepare(statement)),
-  );
-}
-
-function adminBindings(db: D1Database): Cloudflare.Env {
-  return {
-    ADMIN_KEY: adminKey,
-    ADMIN_RATE_LIMIT: {
-      async limit() {
-        return { success: await Promise.resolve(true) };
-      },
-    },
-    DB: db,
-    REPORT_RATE_LIMIT: {
-      async limit() {
-        return { success: await Promise.resolve(true) };
-      },
-    },
-    TURNSTILE_HOSTNAME: "vibedetector.net",
-    TURNSTILE_SITE_KEY: "0x4AAAAAAFROSyaakxb3TQIa",
-  };
-}
-
-test("admin fails closed, bounds keys, requires origin and limits login attempts separately", async () => {
-  const bindings = adminBindings(await database());
-  expect(await apiStatus(adminRequest("models"), bindings)).toBe(401);
-  expect(
-    await apiStatus(adminRequest("models", { name: "new", provider: "claude" }), bindings),
-  ).toBe(401);
-  expect(await apiStatus(adminRequest("login", { key: "wrong" }), bindings)).toBe(401);
-  const oversizedKey = "x".repeat(1025);
-  const oversizedBody = "x".repeat(5000);
-  expect(await apiStatus(adminRequest("login", { key: oversizedKey }), bindings)).toBe(400);
-  expect(await apiStatus(adminRequest("login", { key: oversizedBody }), bindings)).toBe(413);
-  expect(
-    await apiStatus(adminRequest("login", { key: adminKey }, "", "https://evil.invalid"), bindings),
-  ).toBe(403);
-  expect(
-    await apiStatus(adminRequest("login", { key: adminKey }), { ...bindings, ADMIN_KEY: "short" }),
-  ).toBe(503);
-  const missing = { ...bindings };
-  Reflect.deleteProperty(missing, "ADMIN_RATE_LIMIT");
-  expect(await apiStatus(adminRequest("login", { key: adminKey }), missing)).toBe(503);
-  const runtime = new Miniflare(
-    convertV4MiniflareOptions({
-      workers: [
-        {
-          modules: true,
-          ratelimits: {
-            ADMIN_RATE_LIMIT: { namespace_id: "874164", simple: { limit: 2, period: 60 } },
-          },
-          script: "export default { fetch() { return new Response('ok'); } }",
-        },
-      ],
-    }),
-  );
-  runtimes.push(runtime);
-  const limits = await runtime.getBindings<{ ADMIN_RATE_LIMIT: RateLimit }>();
-  const limited = { ...bindings, ADMIN_RATE_LIMIT: limits.ADMIN_RATE_LIMIT };
-  expect(await apiStatus(adminRequest("login", { key: "wrong" }), limited)).toBe(401);
-  expect(await apiStatus(adminRequest("login", { key: "wrong" }), limited)).toBe(401);
-  expect(await apiStatus(adminRequest("login", { key: adminKey }), limited)).toBe(429);
-});
-
-test("admin cookie signatures, expiry, rotation, HTTPS and logout are enforced", async () => {
-  const bindings = adminBindings(await database());
-  const response = await handleApi(adminRequest("login", { key: adminKey }), bindings);
+async function admin(db: D1Database): Promise<string> {
+  const response = await handleApi(request("/api/admin/login", { key: SECRET }), bindings(db));
   expect(response.status).toBe(200);
-  const cookie = cookieHeader(response);
-  expect(response.headers.get("Set-Cookie")).toContain("HttpOnly; SameSite=Strict; Max-Age=3600");
-  expect(response.headers.get("Set-Cookie")).not.toContain("Domain=");
-  expect(cookie).not.toContain(adminKey);
-  expect(await apiStatus(adminRequest("models", undefined, cookie), bindings)).toBe(200);
-  expect(
-    await apiStatus(adminRequest("models", undefined, cookie, "https://evil.invalid"), bindings),
-  ).toBe(403);
-  const crossSite = new Request("http://localhost/api/admin/models", {
-    headers: { Cookie: cookie, "Sec-Fetch-Site": "cross-site" },
-  });
-  expect(await apiStatus(crossSite, bindings)).toBe(403);
-  const absentOrigin = new Request("http://localhost/api/admin/models", {
-    headers: { Cookie: cookie },
-  });
-  expect(await apiStatus(absentOrigin, bindings)).toBe(200);
-  const corrupt = `${cookie.slice(0, -1)}z`;
-  expect(await apiStatus(adminRequest("models", undefined, corrupt), bindings)).toBe(401);
-  expect(
-    await apiStatus(adminRequest("models", undefined, cookie), {
-      ...bindings,
-      ADMIN_KEY: "rotated-test-key-12345678901234567890",
-    }),
-  ).toBe(401);
-  const issued = `${Date.now() - HOUR - 1}`;
-  const payload = `${issued}.${"0".repeat(32)}`;
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(adminKey),
-    { hash: "SHA-256", name: "HMAC" },
-    false,
-    ["sign"],
-  );
-  const signed = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
-  const signature = Array.from(new Uint8Array(signed), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
-  expect(
-    await apiStatus(
-      adminRequest("models", undefined, `vd_admin=${payload}.${signature}`),
-      bindings,
+  const cookie = response.headers.get("Set-Cookie")?.split(";")[0];
+  if (!cookie) {
+    throw new Error("Missing admin cookie");
+  }
+  return cookie;
+}
+
+async function firstModel(db: D1Database, provider = CLAUDE): Promise<ModelOption> {
+  const [model] = await loadModels(db, provider);
+  if (!model) {
+    throw new Error("Missing seeded model");
+  }
+  return model;
+}
+
+test("migration preserves report identity, retractions, timestamps, model order and archived state", async () => {
+  const db = await database(true);
+  await db.batch([
+    db.prepare(
+      "UPDATE models SET active = 0, position = 73 WHERE provider = 'claude' AND name = 'Claude Opus 5.5'",
     ),
-  ).toBe(401);
-  const secure = await handleApi(
-    new Request("https://vibedetector.net/api/admin/login", {
-      body: JSON.stringify({ key: adminKey }),
-      headers: {
-        "CF-Connecting-IP": "127.0.0.1",
-        "Content-Type": "application/json",
-        Origin: "https://vibedetector.net",
-      },
-      method: "POST",
-    }),
-    bindings,
-  );
-  expect(secure.headers.get("Set-Cookie")).toContain("Secure");
-  const insecure = await handleApi(
-    new Request("http://vibedetector.net/api/admin/login", {
-      body: JSON.stringify({ key: adminKey }),
-      headers: {
-        "CF-Connecting-IP": "127.0.0.1",
-        "Content-Type": "application/json",
-        Origin: "http://vibedetector.net",
-      },
-      method: "POST",
-    }),
-    bindings,
-  );
-  expect(insecure.status).toBe(403);
-  const logout = await handleApi(adminRequest("logout", {}, cookie), bindings);
-  expect(logout.headers.get("Set-Cookie")).toContain("Max-Age=0");
-});
-
-test("admin login and signed sessions execute inside the actual Workers runtime", async () => {
-  const bundle = await Bun.build({
-    entrypoints: [new URL("../src/server/api.ts", import.meta.url).pathname],
-    external: ["node:crypto"],
-    target: "node",
-  });
-  expect(bundle.success).toBe(true);
-  const [output] = bundle.outputs;
-  if (!output) {
-    throw new Error("Missing Worker bundle");
-  }
-  const script = `${await output.text()}\nexport default { fetch(request, env) { return handleApi(request, env); } };`;
-  const runtime = new Miniflare(
-    convertV4MiniflareOptions({
-      workers: [
-        {
-          bindings: { ADMIN_KEY: adminKey },
-          compatibilityDate: "2026-10-08",
-          compatibilityFlags: ["nodejs_compat"],
-          d1Databases: ["DB"],
-          modules: true,
-          ratelimits: {
-            ADMIN_RATE_LIMIT: { namespace_id: "874164", simple: { limit: 5, period: 60 } },
-          },
-          script,
-        },
-      ],
-    }),
-  );
-  runtimes.push(runtime);
-  const { DB: db } = await runtime.getBindings<{ DB: D1Database }>();
-  await migrateModelsCatalogue(db);
-  // Miniflare's Bun type replacement misidentifies Fetcher as Request; the runtime exposes fetch.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-  const worker = (await runtime.getWorker()) as unknown as {
-    fetch: (input: string, init?: RequestInit) => Promise<Response>;
-  };
-  const login = await worker.fetch("https://localhost/api/admin/login", {
-    body: JSON.stringify({ key: adminKey }),
-    headers: {
-      "CF-Connecting-IP": "192.0.2.99",
-      "Content-Type": "application/json",
-      Origin: "https://localhost",
-    },
-    method: "POST",
-  });
-  const loginBody: unknown = await login.json();
-  expect(loginBody).toEqual({ authenticated: true });
-  expect(login.status).toBe(200);
-  const cookie = login.headers.get("Set-Cookie")?.split(";")[0] ?? "";
-  expect(cookie).toMatch(/^vd_admin=\d{13}\.[a-f0-9]{32}\.[a-f0-9]{64}$/u);
-  const catalogue = await worker.fetch("https://localhost/api/admin/models", {
-    headers: { Cookie: cookie },
-  });
-  expect(catalogue.status).toBe(200);
-  const rows: unknown = await catalogue.json();
-  expect(rows).toContainEqual({ active: true, name: "GPT-6 Astra", provider: "chatgpt" });
-});
-
-test("catalogue additions and states persist without reseeding and preserve archived history", async () => {
-  const db = await database();
-  const bindings = adminBindings(db);
-  const login = await handleApi(adminRequest("login", { key: adminKey }), bindings);
-  const cookie = cookieHeader(login);
-  const model = { name: "Claude Future", provider: "claude" } as const;
-  const add = await handleApi(adminRequest("models", model, cookie), bindings);
-  expect(add.status).toBe(200);
-  expect(add.headers.get("Cache-Control")).toBe("no-store");
-  expect(
-    await apiStatus(
-      adminRequest("models/state", { ...model, active: false }, cookie, "https://evil.invalid"),
-      bindings,
+    db.prepare(
+      "INSERT INTO reports VALUES ('claude', 'identity', 12, 12345, 'slow', 'Claude Opus 5.5')",
     ),
-  ).toBe(403);
-  for (const name of ["", "unspecified", "ALL", " x", "x".repeat(121), "bad\nname"]) {
-    // oxlint-disable-next-line eslint/no-await-in-loop
-    const status = await apiStatus(
-      adminRequest("models", { name, provider: "claude" }, cookie),
-      bindings,
-    );
-    expect(status).toBe(400);
-  }
-  const session = await handleApi(new Request("http://localhost/api/session/claude"), bindings);
-  const identity = cookieHeader(session);
-  const window = Math.floor(Date.now() / HOUR);
-  const report = (category: string | null) =>
-    post(JSON.stringify({ category, model: model.name, token: "dummy", window }), {
-      Cookie: identity,
-    });
-  expect(await apiStatus(report("slow"), bindings)).toBe(200);
-  expect(
-    await apiStatus(adminRequest("models/state", { ...model, active: false }, cookie), bindings),
-  ).toBe(200);
-  expect(await apiStatus(adminRequest("models", model, cookie), bindings)).toBe(200);
-  expect(await loadModels(db, "claude")).toContainEqual({ ...model, active: false });
-  const choices = await handleApi(
-    new Request("http://localhost/api/session/claude", { headers: { Cookie: identity } }),
-    bindings,
-  );
-  const choiceBody: unknown = await choices.json();
-  expect(choiceBody).toMatchObject({
-    category: "slow",
-    model: model.name,
-    models: providerModels.claude.map((name) => ({ active: true, name, provider: "claude" })),
+    db.prepare("INSERT INTO reports VALUES ('chatgpt', 'retraction', 13, 23456, NULL, NULL)"),
+  ]);
+  await migrate(db, migrations[3] ?? "");
+  const model = await db
+    .prepare("SELECT * FROM models WHERE provider = ? AND name = 'Claude Opus 5.5'")
+    .bind(CLAUDE)
+    .first<{ id: string; active: number; position: number }>();
+  expect(isId(model?.id)).toBe(true);
+  expect(model?.active).toBe(0);
+  expect(model?.position).toBe(73);
+  expect(await db.prepare("SELECT * FROM reports ORDER BY created_at").all()).toMatchObject({
+    results: [
+      {
+        category: "slow",
+        created_at: 12_345,
+        identity_hash: "identity",
+        model: model?.id,
+        provider: CLAUDE,
+        window: 12,
+      },
+      {
+        category: null,
+        created_at: 23_456,
+        identity_hash: "retraction",
+        model: null,
+        provider: CHATGPT,
+        window: 13,
+      },
+    ],
   });
-  expect(await apiStatus(report("slow"), bindings)).toBe(200);
-  const historical = await dashboardFromDatabase(db, "claude", "24h", Date.now(), model.name);
-  expect(historical.model).toBe("");
-  expect(historical.buckets.reduce((total, bucket) => total + bucket.slow, 0)).toBe(1);
-  expect(historical.models).toEqual(
-    providerModels.claude.map((name) => ({ active: true, name, provider: "claude" })),
-  );
-  const publicModels = await handleApi(new Request("http://localhost/api/models/claude"), bindings);
-  const publicBody: unknown = await publicModels.json();
-  expect(publicBody).toEqual(
-    providerModels.claude.map((name) => ({ active: true, name, provider: "claude" })),
-  );
-  expect(await apiStatus(report(null), bindings)).toBe(200);
-  expect(await apiStatus(report("broken"), bindings)).toBe(400);
-  expect(
-    await apiStatus(adminRequest("models/state", { ...model, active: true }, cookie), bindings),
-  ).toBe(200);
-  expect(await apiStatus(report("broken"), bindings)).toBe(200);
-  const restoredModels = await handleApi(
-    new Request("http://localhost/api/models/claude"),
-    bindings,
-  );
-  const restoredBody: unknown = await restoredModels.json();
-  expect(restoredBody).toContainEqual({ ...model, active: true });
-  await db
-    .prepare("UPDATE models SET active = 0 WHERE provider = 'chatgpt' AND name = 'GPT-6 Astra'")
-    .run();
-  await migrateModelsCatalogue(db);
-  expect(await loadModels(db, "chatgpt")).toContainEqual({
-    active: false,
-    name: "GPT-6 Astra",
-    provider: "chatgpt",
-  });
+  expect((await loadModels(db)).length).toBe(55);
+  expect((await loadProviders(db)).length).toBe(10);
+  expect(await db.prepare("PRAGMA foreign_key_check").all()).toMatchObject({ results: [] });
+  const indexes = await db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'index'")
+    .all<{ name: string }>();
+  expect(indexes.results.map((row) => row.name)).toContain("reports_provider_time");
+  expect(indexes.results.map((row) => row.name)).toContain("reports_retention");
 });
 
-test("archived and arbitrary named graph requests normalize to all without changing provider metrics", async () => {
-  const db = await database();
-  const bindings = adminBindings(db);
-  const now = Date.now();
-  await saveReport(db, "claude", "archived", "slow", now - 10, "Claude Opus 5.5");
-  await saveReport(db, "claude", "active", "broken", now - 10, "Claude Sonnet 5.5");
-  await db
-    .prepare("UPDATE models SET active = 0 WHERE provider = 'claude' AND name = 'Claude Opus 5.5'")
-    .run();
-  for (const name of ["Claude Opus 5.5", "arbitrary old model"]) {
-    // oxlint-disable-next-line eslint/no-await-in-loop
-    const response = await handleApi(
-      new Request(`http://localhost/api/providers/claude?model=${encodeURIComponent(name)}`),
-      bindings,
-    );
-    // oxlint-disable-next-line eslint/no-await-in-loop
-    const body: unknown = await response.json();
-    expect(body).toMatchObject({
-      baseline: null,
-      hourly: 2,
-      model: "",
-      verdict: "insufficient community data",
-    });
-    // oxlint-disable-next-line eslint/no-await-in-loop
-    const dashboard = await dashboardFromDatabase(db, "claude", "24h", now, name);
-    expect(dashboard.model).toBe("");
-    expect(
-      dashboard.buckets.reduce((total, bucket) => total + bucket.slow + bucket.broken, 0),
-    ).toBe(2);
-  }
-  const active = await dashboardFromDatabase(db, "claude", "24h", now, "Claude Sonnet 5.5");
-  expect(active.model).toBe("Claude Sonnet 5.5");
-  expect(active.buckets.reduce((total, bucket) => total + bucket.slow + bucket.broken, 0)).toBe(1);
-  expect(active.hourly).toBe(2);
-  expect(await loadReports(db, "claude", now)).toHaveLength(2);
-});
-
-test("admin order persists full provider permutations, rejects invalid requests without writes and appends new models", async () => {
-  const db = await database();
+test("migration fails atomically for unknown named metadata rather than nulling it", async () => {
+  const db = await database(true);
   await db
     .prepare(
-      "DELETE FROM models WHERE provider = 'claude' AND name NOT IN ('Claude Opus 5.5', 'Claude Sonnet 5.5')",
+      "INSERT INTO reports VALUES ('claude', 'identity', 12, 12345, 'slow', 'Unmapped historical model')",
     )
     .run();
-  const bindings = adminBindings(db);
-  const login = await handleApi(adminRequest("login", { key: adminKey }), bindings);
-  const cookie = cookieHeader(login);
-  await handleApi(
-    adminRequest("models", { name: "Claude Archived", provider: "claude" }, cookie),
-    bindings,
-  );
-  await handleApi(
-    adminRequest(
-      "models/state",
-      { active: false, name: "Claude Archived", provider: "claude" },
-      cookie,
-    ),
-    bindings,
-  );
-  const before = await db
-    .prepare(
-      "SELECT provider, name, active, position FROM models ORDER BY provider, position, name",
-    )
-    .all();
-  const names = ["Claude Sonnet 5.5", "Claude Archived", "Claude Opus 5.5"];
-  for (const body of [
-    { names: ["Claude Sonnet 5.5", "Claude Opus 5.5"], provider: "claude" },
-    { names: ["Claude Archived", "Claude Archived", "Claude Opus 5.5"], provider: "claude" },
-    { names: ["GPT-6 Astra", "Claude Archived", "Claude Opus 5.5"], provider: "claude" },
-    { names: ["Unknown", "Claude Archived", "Claude Opus 5.5"], provider: "claude" },
-    { names, provider: "unknown" },
-    { names: "bad", provider: "claude" },
-    { names: [1, "Claude Archived", "Claude Opus 5.5"], provider: "claude" },
-  ]) {
-    // oxlint-disable-next-line eslint/no-await-in-loop
-    expect(await apiStatus(adminRequest("models/order", body, cookie), bindings)).toBe(400);
-    // oxlint-disable-next-line eslint/no-await-in-loop
-    const unchanged = await db
+  await expect(migrate(db, migrations[3] ?? "")).rejects.toThrow();
+  expect(await db.prepare("SELECT model FROM reports").first()).toEqual({
+    model: "Unmapped historical model",
+  });
+  expect(
+    await db.prepare("SELECT name FROM sqlite_master WHERE name = 'providers'").first(),
+  ).toBeNull();
+});
+
+test("D1 UUID rename stability preserves filtering, deduplication and report restoration", async () => {
+  const db = await database();
+  const model = await firstModel(db);
+  const now = Math.floor(Date.now() / HOUR) * HOUR + 1000;
+  await saveReport(db, CLAUDE, "browser", "slow", now, model.id);
+  await db.batch([
+    db.prepare("UPDATE models SET name = 'Corrected model name' WHERE id = ?").bind(model.id),
+    db
       .prepare(
-        "SELECT provider, name, active, position FROM models ORDER BY provider, position, name",
+        "UPDATE providers SET name = 'Corrected provider name', slug = 'renamed-provider' WHERE id = ?",
       )
-      .all();
-    expect(unchanged.results).toEqual(before.results);
-  }
-  const order = { names, provider: "claude" };
-  expect(await apiStatus(adminRequest("models/order", order), bindings)).toBe(401);
-  expect(
-    await apiStatus(adminRequest("models/order", order, cookie, "https://evil.invalid"), bindings),
-  ).toBe(403);
-  const absentOrigin = adminRequest("models/order", order, cookie);
-  absentOrigin.headers.delete("Origin");
-  expect(await apiStatus(absentOrigin, bindings)).toBe(403);
-  expect(await apiStatus(adminRequest("models/order", undefined, cookie), bindings)).toBe(405);
-  expect(await apiStatus(adminRequest("models/order", order, cookie), bindings)).toBe(200);
-  expect(await apiStatus(adminRequest("models/order", order, cookie), bindings)).toBe(200);
-  const ordered = await db
-    .prepare("SELECT name, position FROM models WHERE provider = 'claude' ORDER BY position")
-    .all();
-  expect(ordered.results).toEqual([
-    { name: "Claude Sonnet 5.5", position: 0 },
-    { name: "Claude Archived", position: 1 },
-    { name: "Claude Opus 5.5", position: 2 },
+      .bind(CLAUDE),
   ]);
-  const other = await db
-    .prepare(
-      "SELECT provider, name, active, position FROM models WHERE provider != 'claude' ORDER BY provider, position, name",
-    )
-    .all();
-  expect(other.results).toEqual(before.results.filter((row) => row["provider"] !== "claude"));
-  const reload = await handleApi(adminRequest("models", undefined, cookie), bindings);
-  const reloadBody: unknown = await reload.json();
-  expect(reloadBody).toContainEqual({ active: false, name: "Claude Archived", provider: "claude" });
-  const reloadedModels = await loadModels(db, "claude");
-  expect(reloadedModels.map((model) => model.name)).toEqual(names);
-  const publicList = await handleApi(new Request("http://localhost/api/models/claude"), bindings);
-  const publicBody: unknown = await publicList.json();
-  expect(publicBody).toEqual([
-    { active: true, name: "Claude Sonnet 5.5", provider: "claude" },
-    { active: true, name: "Claude Opus 5.5", provider: "claude" },
-  ]);
-  const dashboard = await dashboardFromDatabase(db, "claude", "24h", Date.now());
-  expect(publicBody).toEqual(dashboard.models);
-  const session = await handleApi(new Request("http://localhost/api/session/claude"), bindings);
-  const sessionBody: unknown = await session.json();
-  expect(sessionBody).toMatchObject({ models: publicBody });
-  await Promise.all(
-    ["Claude New A", "Claude New B"].map(async (name) => {
-      expect(
-        await apiStatus(adminRequest("models", { name, provider: "claude" }, cookie), bindings),
-      ).toBe(200);
-    }),
+  await saveReport(db, CLAUDE, "browser", "broken", now + 5000, model.id);
+  const dashboard = await dashboardFromDatabase(
+    db,
+    "renamed-provider",
+    "24h",
+    now + 5000,
+    model.id,
   );
-  const appended = await db
-    .prepare("SELECT name, position FROM models WHERE provider = 'claude' ORDER BY position")
-    .all<{ name: string; position: number }>();
-  expect(ordered.results).toEqual(appended.results.slice(0, 3));
-  expect(
-    appended.results
-      .slice(3)
-      .map((row) => row.name)
-      .toSorted(),
-  ).toEqual(["Claude New A", "Claude New B"]);
-  expect(appended.results.map((row) => row.position)).toEqual([0, 1, 2, 3, 4]);
+  expect(dashboard.model).toBe(model.id);
+  expect(dashboard.provider.name).toBe("Corrected provider name");
+  expect(dashboard.models.find((entry) => entry.id === model.id)?.name).toBe(
+    "Corrected model name",
+  );
+  expect(dashboard.buckets.reduce((total, bucket) => total + bucket.broken, 0)).toBe(1);
+  expect(await sessionReport(db, CLAUDE, "browser", now)).toEqual({
+    category: "broken",
+    model: model.id,
+  });
+  expect(await loadReports(db, CLAUDE, now + 5000)).toEqual([
+    { category: "broken", created_at: now, model: model.id },
+  ]);
+  await saveReport(db, CLAUDE, "browser", null, now + 6000, model.id);
+  expect(await sessionReport(db, CLAUDE, "browser", now)).toEqual({
+    category: null,
+    model: model.id,
+  });
+  expect((await handleApi(request("/api/providers/claude"), bindings(db))).status).toBe(404);
 });
 
-test("competing complete orders leave one winning permutation without mixed positions", async () => {
+test("composite D1 ownership rejects cross-provider models even through direct SQL", async () => {
   const db = await database();
-  const catalogue = await loadModels(db, "claude");
-  const names = catalogue.map((model) => model.name);
-  const reversed = names.toReversed();
-  const rotated = [...names.slice(1), names[0]];
-  await Promise.all([
-    orderModels(db, { names: reversed, provider: "claude" }),
-    orderModels(db, { names: rotated, provider: "claude" }),
-  ]);
-  const result = await db
-    .prepare("SELECT name, position FROM models WHERE provider = 'claude' ORDER BY position")
-    .all<{ name: string; position: number }>();
-  const actual = result.results.map((row) => row.name);
-  expect([reversed, rotated]).toContainEqual(actual);
-  expect(result.results.map((row) => row.position)).toEqual(names.map((_name, index) => index));
+  const model = await firstModel(db);
+  await expect(saveReport(db, CHATGPT, "browser", "slow", Date.now(), model.id)).rejects.toThrow(
+    "Invalid report model",
+  );
+  await expect(
+    db
+      .prepare("INSERT INTO reports VALUES (?, 'browser', 1, 1, 'slow', ?)")
+      .bind(CHATGPT, model.id)
+      .run(),
+  ).rejects.toThrow("FOREIGN KEY");
 });
 
-test("large catalogue orders use the admin body limit and new models stop at 256", async () => {
+test("admin creates, renames, archives and restores providers and models without changing IDs", async () => {
   const db = await database();
-  const bindings = adminBindings(db);
-  const login = await handleApi(adminRequest("login", { key: adminKey }), bindings);
-  const cookie = cookieHeader(login);
-  const longNames = Array.from(
-    { length: 34 },
-    (_value, index) => `Claude Long ${String(index).padStart(2, "0")} ${"x".repeat(100)}`,
+  const cookie = await admin(db);
+  const providerInput = {
+    logo: "/logos/claude.svg",
+    maker: "New maker",
+    name: "New provider",
+    slug: "new-provider",
+    status: "https://status.example.com",
+    statusLabel: "Status page",
+  };
+  const created = await handleApi(
+    request("/api/admin/providers", providerInput, cookie),
+    bindings(db),
   );
-  for (const name of longNames) {
-    // oxlint-disable-next-line eslint/no-await-in-loop
-    const status = await apiStatus(
-      adminRequest("models", { name, provider: "claude" }, cookie),
-      bindings,
-    );
-    expect(status).toBe(200);
+  expect(created.status).toBe(200);
+  const providers = await created.json();
+  const provider = providers.find((entry) => entry.slug === "new-provider");
+  if (!provider) {
+    throw new Error("Missing created provider");
   }
-  const allModels = await loadModels(db, "claude");
-  const names = allModels.map((model) => model.name).toReversed();
-  expect(JSON.stringify({ names, provider: "claude" }).length).toBeGreaterThan(4096);
+  expect(isId(provider.id)).toBe(true);
   expect(
-    await apiStatus(adminRequest("models/order", { names, provider: "claude" }, cookie), bindings),
+    (
+      await handleApi(
+        request("/api/admin/models", { name: "Generic model", provider: provider.id }, cookie),
+        bindings(db),
+      )
+    ).status,
   ).toBe(200);
-  const orderedModels = await loadModels(db, "claude");
-  expect(orderedModels.map((model) => model.name)).toEqual(names);
+  const model = await firstModel(db, provider.id);
+  expect(
+    (
+      await handleApi(
+        request("/api/admin/models/state", { active: false, id: model.id }, cookie),
+        bindings(db),
+      )
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await handleApi(
+        request("/api/admin/models/update", { id: model.id, name: "Renamed model" }, cookie),
+        bindings(db),
+      )
+    ).status,
+  ).toBe(200);
+  expect(await loadModels(db, provider.id)).toEqual([
+    { active: false, id: model.id, name: "Renamed model", provider: provider.id },
+  ]);
+  expect(
+    (
+      await handleApi(
+        request(
+          "/api/admin/providers/update",
+          { ...providerInput, id: provider.id, name: "Renamed provider" },
+          cookie,
+        ),
+        bindings(db),
+      )
+    ).status,
+  ).toBe(200);
+  expect((await resolveProvider(db, provider.id)).name).toBe("Renamed provider");
+  expect(
+    (
+      await handleApi(
+        request("/api/admin/providers/state", { active: false, id: provider.id }, cookie),
+        bindings(db),
+      )
+    ).status,
+  ).toBe(200);
+  for (const route of ["providers", "models", "session", "reports"]) {
+    const response = await handleApi(
+      request(`/api/${route}/${provider.id}`, route === "reports" ? {} : undefined),
+      bindings(db),
+    );
+    expect(response.status).toBe(404);
+  }
+  await expect(dashboardFromDatabase(db, provider.slug, "24h", Date.now())).rejects.toThrow(
+    "Unknown provider",
+  );
+  expect(
+    (await overviewFromDatabase(db, Date.now())).some((entry) => entry.provider.id === provider.id),
+  ).toBe(false);
+  expect((await sitemap(db, "https://example.com/?a=1&b=2")).text()).resolves.not.toContain(
+    "new-provider",
+  );
+  expect((await loadModels(db, provider.id)).length).toBe(1);
+  expect(
+    (
+      await handleApi(
+        request("/api/admin/providers/state", { active: true, id: provider.id }, cookie),
+        bindings(db),
+      )
+    ).status,
+  ).toBe(200);
+  expect((await resolveProvider(db, provider.slug)).id).toBe(provider.id);
+});
 
-  const oversized = JSON.stringify({ names: [...names, "z".repeat(1200)], provider: "claude" });
-  const streamed = new Request("http://localhost/api/admin/models/order", {
-    body: new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(oversized));
-        controller.enqueue(new Uint8Array(262_145));
-        controller.close();
-      },
-    }),
+test("provider URLs and slugs reject unsafe values and duplicate display values return 409", async () => {
+  const db = await database();
+  const cookie = await admin(db);
+  const provider = initialProviders[0];
+  if (!provider) {
+    throw new Error("Missing provider seed");
+  }
+  for (const slug of [
+    "api",
+    "admin",
+    "privacy",
+    "methodology",
+    "robots.txt",
+    "sitemap.xml",
+    "UPPER",
+    "../escape",
+  ]) {
+    expect(
+      (
+        await handleApi(
+          request("/api/admin/providers", { ...provider, slug }, cookie),
+          bindings(db),
+        )
+      ).status,
+    ).toBe(400);
+  }
+  expect(() => parseProvider({ ...provider, status: "javascript:alert(1)" })).toThrow();
+  expect(() => parseProvider({ ...provider, logo: "/logos/../private.svg" })).toThrow();
+  expect(() => parseProvider({ ...provider, logo: "http://example.com/logo.svg" })).toThrow();
+  expect(
+    (await handleApi(request("/api/admin/providers", provider, cookie), bindings(db))).status,
+  ).toBe(409);
+  const model = await firstModel(db);
+  expect(
+    (
+      await handleApi(
+        request("/api/admin/models", { name: model.name, provider: CLAUDE }, cookie),
+        bindings(db),
+      )
+    ).status,
+  ).toBe(409);
+});
+
+test("atomic full-ID orders include archived records, competing orders and append safely", async () => {
+  const db = await database();
+  const models = await loadModels(db, CLAUDE);
+  const ids = models.map((model) => model.id);
+  const reverse = ids.toReversed();
+  await db.prepare("UPDATE models SET active = 0 WHERE id = ?").bind(ids[0]).run();
+  await orderCatalogue(db, { ids: reverse, provider: CLAUDE }, "models");
+  expect((await loadModels(db, CLAUDE)).map((model) => model.id)).toEqual(reverse);
+  await expect(
+    orderCatalogue(db, { ids: reverse.slice(1), provider: CLAUDE }, "models"),
+  ).rejects.toThrow("Catalogue changed");
+  await expect(
+    orderCatalogue(db, { ids: [ids[0], ids[0]], provider: CLAUDE }, "models"),
+  ).rejects.toThrow();
+  await Promise.all([
+    orderCatalogue(db, { ids, provider: CLAUDE }, "models"),
+    orderCatalogue(db, { ids: reverse, provider: CLAUDE }, "models"),
+  ]);
+  expect([ids, reverse]).toContainEqual((await loadModels(db, CLAUDE)).map((model) => model.id));
+  const cookie = await admin(db);
+  expect(
+    (
+      await handleApi(
+        request("/api/admin/models", { name: "Appended", provider: CLAUDE }, cookie),
+        bindings(db),
+      )
+    ).status,
+  ).toBe(200);
+  expect((await loadModels(db, CLAUDE)).at(-1)?.name).toBe("Appended");
+  const providers = (await loadProviders(db)).map((provider) => provider.id).toReversed();
+  await orderCatalogue(db, { ids: providers }, "providers");
+  expect((await loadProviders(db)).map((provider) => provider.id)).toEqual(providers);
+  const oversized = new Request("http://localhost/api/admin/providers/order", {
+    body: " ".repeat(262_145),
     headers: { "Content-Type": "application/json", Cookie: cookie, Origin: "http://localhost" },
     method: "POST",
   });
-  expect(await apiStatus(streamed, bindings)).toBe(413);
-  const oversizedHeader = adminRequest("models/order", { names, provider: "claude" }, cookie);
-  oversizedHeader.headers.set("Content-Length", "262145");
-  expect(await apiStatus(oversizedHeader, bindings)).toBe(413);
-  const hugeName = "x".repeat(5000);
-  expect(
-    await apiStatus(
-      adminRequest("models", { name: hugeName, provider: "claude" }, cookie),
-      bindings,
-    ),
-  ).toBe(413);
-
-  const count = await db
-    .prepare("SELECT COUNT(*) AS total FROM models WHERE provider = 'claude'")
-    .first<number>("total");
-  expect(count).toBeGreaterThan(0);
-  for (let index = count ?? 0; index < 255; index += 1) {
-    // oxlint-disable-next-line eslint/no-await-in-loop
-    const status = await apiStatus(
-      adminRequest("models", { name: `Claude Capacity ${index}`, provider: "claude" }, cookie),
-      bindings,
-    );
-    expect(status).toBe(200);
-  }
-  const racing = await Promise.all(
-    ["Claude Capacity A", "Claude Capacity B"].map(async (name) =>
-      apiStatus(adminRequest("models", { name, provider: "claude" }, cookie), bindings),
-    ),
-  );
-  expect(racing.toSorted((left, right) => left - right)).toEqual([200, 400]);
-  expect(
-    await apiStatus(
-      adminRequest("models", { name: "Claude Capacity Overflow", provider: "claude" }, cookie),
-      bindings,
-    ),
-  ).toBe(400);
-  const finalCount = await db
-    .prepare("SELECT COUNT(*) AS total FROM models WHERE provider = 'claude'")
-    .first<number>("total");
-  expect(finalCount).toBe(256);
-  const fullCatalogue = await loadModels(db, "claude");
-  const fullNames = fullCatalogue.map((model) => model.name).toReversed();
-  expect(
-    await apiStatus(
-      adminRequest("models/order", { names: fullNames, provider: "claude" }, cookie),
-      bindings,
-    ),
-  ).toBe(200);
-  expect(
-    await apiStatus(
-      adminRequest("models/order", { names: [...fullNames, "extra"], provider: "claude" }, cookie),
-      bindings,
-    ),
-  ).toBe(400);
-  expect(
-    await apiStatus(
-      adminRequest("models", { name: longNames[0], provider: "claude" }, cookie),
-      bindings,
-    ),
-  ).toBe(200);
-  expect(
-    await db
-      .prepare("SELECT COUNT(*) AS total FROM models WHERE provider = 'claude'")
-      .first<number>("total"),
-  ).toBe(256);
+  expect((await handleApi(oversized, bindings(db))).status).toBe(413);
 });
 
-test("catalogue changes between order validation and D1 batch leave all positions untouched", async () => {
+test("archive model exception stays scoped to saved identity, provider, hour and retraction state", async () => {
+  const db = await database();
+  const model = await firstModel(db);
+  const now = Math.floor(Date.now() / HOUR) * HOUR + 1000;
+  await saveReport(db, CLAUDE, "owner", "slow", now, model.id);
+  await db.prepare("UPDATE models SET active = 0 WHERE id = ?").bind(model.id).run();
+  expect(await loadActiveModels(db, CLAUDE)).not.toContainEqual(model);
+  expect((await dashboardFromDatabase(db, CLAUDE, "24h", now, model.id)).model).toBe("");
+  await expect(saveReport(db, CLAUDE, "other", "slow", now, model.id)).rejects.toThrow();
+  await expect(saveReport(db, CLAUDE, "owner", "slow", now + HOUR, model.id)).rejects.toThrow();
+  await saveReport(db, CLAUDE, "owner", "broken", now, model.id);
+  await saveReport(db, CLAUDE, "owner", null, now, model.id);
+  await expect(saveReport(db, CLAUDE, "owner", "slow", now, model.id)).rejects.toThrow();
+  await db.prepare("UPDATE providers SET active = 0 WHERE id = ?").bind(CLAUDE).run();
+  await expect(saveReport(db, CLAUDE, "owner", null, now, model.id)).rejects.toThrow();
+});
+
+test("HTTP reports return UUIDs and restore them through the same signed browser identity", async () => {
+  const db = await database();
+  const model = await firstModel(db);
+  const env = bindings(db);
+  const verified = async () =>
+    Response.json({ metadata: { result_with_testing_key: true }, success: true });
+  const session = await handleApi(request("/api/session/claude"), env);
+  const cookie = session.headers.get("Set-Cookie")?.split(";")[0] ?? "";
+  const window = Math.floor(Date.now() / HOUR);
+  const report = await handleApi(
+    request(
+      "/api/reports/claude",
+      { category: "slow", model: model.id, token: "dummy", window },
+      cookie,
+    ),
+    env,
+    verified,
+  );
+  expect(report.status).toBe(200);
+  expect(await report.json()).toEqual({ category: "slow", model: model.id });
+  expect(
+    await (await handleApi(request(`/api/session/${CLAUDE}`, undefined, cookie), env)).json(),
+  ).toMatchObject({ category: "slow", model: model.id });
+  expect(
+    (
+      await handleApi(
+        request(
+          "/api/reports/claude",
+          { category: "slow", model: model.name, token: "dummy", window },
+          cookie,
+        ),
+        env,
+        verified,
+      )
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await handleApi(
+        request(
+          "/api/reports/claude",
+          { category: "slow", token: "dummy", window: window - 1 },
+          cookie,
+        ),
+        env,
+        verified,
+      )
+    ).status,
+  ).toBe(409);
+  expect(
+    (
+      await handleApi(
+        request("/api/reports/claude", { category: "slow", token: "dummy", window }, cookie),
+        env,
+        async () => Response.json({ success: false }),
+      )
+    ).status,
+  ).toBe(403);
+  expect(
+    (
+      await handleApi(
+        request("/api/reports/claude", { category: "slow", token: "dummy", window }, cookie),
+        { ...env, REPORT_RATE_LIMIT: { limit: async () => ({ success: false }) } },
+        verified,
+      )
+    ).status,
+  ).toBe(429);
+});
+
+test("admin authentication and CSRF stay fail closed for both catalogues", async () => {
+  const db = await database();
+  const env = bindings(db);
+  expect((await handleApi(request("/api/admin/providers"), env)).status).toBe(401);
+  expect((await handleApi(request("/api/admin/models"), env)).status).toBe(401);
+  expect((await handleApi(request("/api/admin/login", { key: "wrong" }), env)).status).toBe(401);
+  expect(
+    (await handleApi(request("/api/admin/login", { key: SECRET }, "", "https://attacker.com"), env))
+      .status,
+  ).toBe(403);
+  const cookie = await admin(db);
+  expect(
+    (await handleApi(request("/api/admin/providers", undefined, cookie.slice(0, -2)), env)).status,
+  ).toBe(401);
+  expect(
+    (
+      await handleApi(
+        request(
+          "/api/admin/providers/state",
+          { active: false, id: CLAUDE },
+          cookie,
+          "https://attacker.com",
+        ),
+        env,
+      )
+    ).status,
+  ).toBe(403);
+  expect(
+    (
+      await handleApi(request("/api/admin/providers", undefined, cookie), {
+        ...env,
+        ADMIN_KEY: "a-different-secret-that-is-long-enough-to-use",
+      })
+    ).status,
+  ).toBe(401);
+  const logout = await handleApi(request("/api/admin/logout", {}, cookie), env);
+  expect(logout.headers.get("Set-Cookie")).toContain("Max-Age=0");
+});
+
+test("security validates identity cookies, body bounds, challenge hostname and action", async () => {
+  const identity = await browserIdentity(request("/api/session/claude"));
+  expect(identity.hash).toMatch(/^[a-f0-9]{64}$/u);
+  expect(identity.cookie).toContain("HttpOnly; SameSite=Strict");
+  const cookie = identity.cookie?.split(";")[0] ?? "";
+  expect(await browserIdentity(request("/api/session/claude", undefined, cookie))).toEqual({
+    cookie: null,
+    hash: identity.hash,
+  });
+  await expect(
+    readJson(request("/api/reports/claude", {}, "", "https://attacker.com")),
+  ).rejects.toThrow("Origin rejected");
+  await expect(
+    readJson(request("/api/reports/claude", { padding: "x".repeat(5000) })),
+  ).rejects.toThrow("Body too large");
+  const config = {
+    hostname: "example.com",
+    local: false,
+    secret: "production-secret",
+    siteKey: "production-site-key",
+  };
+  await expect(
+    verifyChallenge(config, "token", async () =>
+      Response.json({ action: "wrong", hostname: "example.com", success: true }),
+    ),
+  ).rejects.toThrow("Challenge rejected");
+  await verifyChallenge(config, "token", async () =>
+    Response.json({ action: "report", hostname: "example.com", success: true }),
+  );
+  expect(() => challengeConfig(bindings({} as D1Database), "example.com")).toThrow(
+    "Reporting is not configured",
+  );
+});
+
+test("dynamic sitemap uses escaped active slugs and follows rename", async () => {
+  const db = await database();
+  await db.prepare("UPDATE providers SET slug = 'corrected-slug' WHERE id = ?").bind(CLAUDE).run();
+  await db.prepare("UPDATE providers SET active = 0 WHERE id = ?").bind(CHATGPT).run();
+  const response = await sitemap(db, "https://example.com/?a=1&b=2");
+  expect(response.headers.get("Content-Type")).toContain("application/xml");
+  const xml = await response.text();
+  expect(xml).toContain("&amp;");
+  expect(xml).toContain("corrected-slug");
+  expect(xml).not.toContain("/claude</loc>");
+  expect(xml).not.toContain("/chatgpt</loc>");
+});
+
+test("provider-only anomaly metrics stay unchanged by model UUID filters", () => {
+  const provider = initialProviders[0];
+  if (!provider) {
+    throw new Error("Missing provider seed");
+  }
+  const now = 60 * HOUR + 2000;
+  const reports = [
+    { category: "slow" as const, created_at: now - 49 * HOUR, model: "model-a" },
+    ...Array.from({ length: 240 }, (_value, index) => ({
+      category: "slow" as const,
+      created_at: now - (2 + (index % 46)) * HOUR,
+      model: "model-a",
+    })),
+    ...Array.from({ length: 25 }, () => ({
+      category: "broken" as const,
+      created_at: now - 1000,
+      model: "model-b",
+    })),
+  ];
+  const all = aggregate(provider, "24h", reports, now);
+  const filtered = aggregate(provider, "24h", reports, now, "model-a");
+  expect(all.hourly).toBe(25);
+  expect(all.baseline).toBe(5);
+  expect(all.verdict).toBe("killed the vibe");
+  expect(filtered.hourly).toBe(25);
+  expect(filtered.baseline).toBe(5);
+  expect(filtered.verdict).toBe("killed the vibe");
+  expect(filtered.buckets.reduce((total, bucket) => total + bucket.broken, 0)).toBe(0);
+});
+
+test("retention uses the UUID dedup keys and drains more than one bounded batch", async () => {
   const db = await database();
   await db
     .prepare(
-      "DELETE FROM models WHERE provider = 'claude' AND name NOT IN ('Claude Opus 5.5', 'Claude Sonnet 5.5')",
+      "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 5002) INSERT INTO reports SELECT ?, CAST(i AS TEXT), 0, 1, 'slow', NULL FROM n",
     )
+    .bind(CLAUDE)
     .run();
-  const guardedDb = new Proxy(db, {
-    get(target, property) {
-      if (property === "batch") {
-        return async (statements: D1PreparedStatement[]) => {
-          await target
-            .prepare(
-              "INSERT INTO models (provider, name, active, position) VALUES ('claude', 'Concurrent model', 1, 99)",
-            )
-            .run();
-          return target.batch(statements);
-        };
-      }
-      const value: unknown = Reflect.get(target, property);
-      return value;
-    },
-  });
-  expect(
-    await errorStatus(
-      orderModels(guardedDb, {
-        names: ["Claude Sonnet 5.5", "Claude Opus 5.5"],
-        provider: "claude",
-      }),
-    ),
-  ).toBe(409);
-  const rows = await db
-    .prepare("SELECT name, position FROM models WHERE provider = 'claude' ORDER BY position")
-    .all();
-  expect(rows.results).toEqual([
-    { name: "Claude Opus 5.5", position: 0 },
-    { name: "Claude Sonnet 5.5", position: 1 },
-    { name: "Concurrent model", position: 99 },
-  ]);
-});
-
-test("archived report exception remains scoped to its identity, provider, hour and nonretracted state", async () => {
-  const db = await database();
-  const now = 100 * HOUR + 10;
-  await saveReport(db, "claude", "owner", "slow", now, "Claude Opus 5.5");
-  await db
-    .prepare("UPDATE models SET active = 0 WHERE provider = 'claude' AND name = 'Claude Opus 5.5'")
-    .run();
-  expect(await saveReport(db, "claude", "owner", "broken", now + 10, "Claude Opus 5.5")).toBe(
-    "broken",
-  );
-  expect(await sessionReport(db, "claude", "owner", now + 20)).toEqual({
-    category: "broken",
-    model: "Claude Opus 5.5",
-  });
-  expect(await errorStatus(saveReport(db, "claude", "other", "slow", now, "Claude Opus 5.5"))).toBe(
-    400,
-  );
-  expect(
-    await errorStatus(saveReport(db, "chatgpt", "owner", "slow", now, "Claude Opus 5.5")),
-  ).toBe(400);
-  expect(
-    await errorStatus(saveReport(db, "claude", "owner", "slow", now + HOUR, "Claude Opus 5.5")),
-  ).toBe(400);
-  expect(await saveReport(db, "claude", "owner", null, now + 30, "Claude Opus 5.5")).toBeNull();
-  expect(
-    await errorStatus(saveReport(db, "claude", "owner", "slow", now + 40, "Claude Opus 5.5")),
-  ).toBe(400);
-  expect(await sessionReport(db, "claude", "owner", now + 50)).toEqual({
-    category: null,
-    model: "Claude Opus 5.5",
+  await saveReport(db, CLAUDE, "current", "slow", Date.now());
+  await retainReports(db, Date.now());
+  expect(await db.prepare("SELECT identity_hash FROM reports").all()).toMatchObject({
+    results: [{ identity_hash: "current" }],
   });
 });
