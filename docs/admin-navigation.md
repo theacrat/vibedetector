@@ -12,4 +12,6 @@ The provider list is the sole authenticated dashboard content, not a second cata
 
 Creation uses the authoritative mutation response to open the new UUID editor. A refresh failure after a committed save must be reported as refresh failure, not as a failed write or an invitation to duplicate the record. If the user leaves creation while a request is pending, a late completion cannot redirect the new screen.
 
+Creation handoff state is one-use and never overrides a later authoritative provider read. Reload/back navigation must show persisted fields, while genuinely dirty inputs remain local until save. A committed create remains identifiable by UUID even if the following catalogue read returns 401; the UI may require sign-in again but must not offer a duplicate create.
+
 Review both PR #7 (`06774c9...c6f4bed`) and this rework against standards and their own specs. Fix every finding and repeat independent reviews until clean before merging this rework. Run exact-head build/format/zero-warning lint/types/full tests/browser/packaging gates. User requested merge, not deployment of this rework.
