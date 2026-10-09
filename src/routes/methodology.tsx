@@ -13,6 +13,11 @@ const Route = createFileRoute("/methodology")({
       </p>
       <h2>Counts and charts</h2>
       <p>
+        Model names are optional report details. Model filters only change the reports shown in the
+        graph. Provider verdicts and normal activity always use all reports for that provider.
+        Unspecified includes reports submitted without a model name.
+      </p>
+      <p>
         Switching category updates your current report. Tap the selected category to undo. The
         hourly count covers the last hour. Chart intervals are 15 minutes for 6h, 30 minutes for 24h
         and 3 hours for 7d. Times are displayed in your local timezone.
