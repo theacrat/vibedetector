@@ -1,7 +1,6 @@
-import type { Category, ProviderId } from "@/domain";
-import { isCategory } from "@/domain";
+import type { Category, ModelOption, ProviderId, SessionReport } from "@/domain";
+import { isCategory, isId } from "@/domain";
 
-import { isModelName } from "./catalogue";
 import { ApiError } from "./security";
 
 const HOUR = 3_600_000;
@@ -10,11 +9,6 @@ interface Report {
   category: Category | null;
   model?: string | null;
 }
-interface SessionReport {
-  category: Category | null;
-  model: string | null;
-}
-
 function readCategory(row: unknown): Category | null {
   if (
     !row ||
@@ -33,11 +27,28 @@ function readSession(row: unknown): SessionReport {
     !row ||
     typeof row !== "object" ||
     !("model" in row) ||
-    (row.model !== null && !isModelName(row.model))
+    (row.model !== null && !isId(row.model))
   ) {
     throw new Error("Invalid stored model");
   }
-  return { category, model: row.model };
+  if (
+    row.model === null ||
+    !("saved_name" in row) ||
+    typeof row.saved_name !== "string" ||
+    !("saved_provider" in row) ||
+    !isId(row.saved_provider) ||
+    !("saved_active" in row) ||
+    (row.saved_active !== 0 && row.saved_active !== 1)
+  ) {
+    return { category, model: row.model };
+  }
+  const savedModel: ModelOption = {
+    active: row.saved_active === 1,
+    id: row.model,
+    name: row.saved_name,
+    provider: row.saved_provider,
+  };
+  return { category, model: row.model, savedModel };
 }
 
 function readReport(row: unknown): Report {
@@ -62,7 +73,9 @@ async function sessionReport(
 ): Promise<SessionReport> {
   const row = await db
     .prepare(
-      "SELECT category, model FROM reports WHERE provider = ? AND identity_hash = ? AND window = ?",
+      `SELECT r.category, r.model, m.name AS saved_name, m.provider AS saved_provider, m.active AS saved_active
+       FROM reports r LEFT JOIN models m ON m.provider = r.provider AND m.id = r.model
+       WHERE r.provider = ? AND r.identity_hash = ? AND r.window = ?`,
     )
     .bind(provider, identity, Math.floor(now / HOUR))
     .first<unknown>();
@@ -81,15 +94,16 @@ async function saveReport(
   // oxlint-disable-next-line unicorn/no-null
   model: string | null = null,
 ): Promise<Category | null> {
-  if (model !== null && !isModelName(model)) {
+  if (model !== null && !isId(model)) {
     throw new ApiError(400, "Invalid report model");
   }
   const row = await db
     .prepare(`INSERT INTO reports (provider, identity_hash, window, created_at, category, model)
     SELECT ?1, ?2, ?3, ?4, ?5, ?6
-    WHERE ?6 IS NULL
-      OR EXISTS (SELECT 1 FROM models WHERE provider = ?1 AND name = ?6 AND active = 1)
-      OR EXISTS (SELECT 1 FROM reports WHERE provider = ?1 AND identity_hash = ?2 AND window = ?3 AND model = ?6 AND (?5 IS NULL OR category IS NOT NULL))
+    WHERE EXISTS (SELECT 1 FROM providers WHERE id = ?1 AND active = 1) AND (
+      ?6 IS NULL
+      OR EXISTS (SELECT 1 FROM models WHERE provider = ?1 AND id = ?6 AND active = 1)
+      OR EXISTS (SELECT 1 FROM reports WHERE provider = ?1 AND identity_hash = ?2 AND window = ?3 AND model = ?6 AND (?5 IS NULL OR category IS NOT NULL)))
     ON CONFLICT (provider, identity_hash, window) DO UPDATE SET category = excluded.category, model = excluded.model
     RETURNING category, model`)
     .bind(provider, identity, Math.floor(now / HOUR), now, category, model)

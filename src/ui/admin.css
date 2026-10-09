@@ -6,6 +6,7 @@
   margin-bottom: 32px;
 }
 .admin-panel {
+  margin-bottom: 24px;
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 24px;
@@ -63,12 +64,33 @@ form.admin-panel {
   margin: 0;
 }
 .admin-models li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
   gap: 16px;
   padding: 16px 0;
   border-top: 1px solid var(--line);
+}
+.admin-providers {
+  list-style: none;
+  padding: 0;
+}
+.admin-providers li {
+  padding-block: 20px;
+  border-top: 1px solid var(--line);
+}
+.admin-panel summary {
+  cursor: pointer;
+  padding-block: 12px;
+}
+.admin-provider-form {
+  margin-block: 16px;
+}
+.admin-provider-form label {
+  display: block;
+  margin-bottom: 8px;
+}
+.admin-id {
+  overflow-wrap: anywhere;
+  color: var(--muted);
 }
 .admin-models small {
   display: block;

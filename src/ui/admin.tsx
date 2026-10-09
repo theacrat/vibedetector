@@ -1,73 +1,52 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, SubmitEvent } from "react";
 
-import { providers } from "@/domain";
 import type { ModelOption } from "@/domain";
 
-import { parseCatalogue } from "./catalogue-data";
-import { requestJson, RequestError } from "./data";
+import { useAdmin } from "./admin-data";
+import type { AdminState } from "./admin-data";
+import { ProviderAdmin } from "./provider-admin";
 
 import "./admin.css";
 
-// oxlint-disable-next-line eslint/max-lines-per-function
-function useAdmin() {
-  const [models, setModels] = useState<ModelOption[]>();
-  const [pending, setPending] = useState(true);
-  const [adminError, setAdminError] = useState("");
-  const read = useCallback(async () => {
-    try {
-      const catalogue = await requestJson<unknown>("/api/admin/models");
-      setModels(parseCatalogue(catalogue));
-    } catch (error) {
-      if (error instanceof RequestError && error.status === 401) {
-        setModels(undefined);
-      } else {
-        throw error;
+function ModelRename({ model, state }: { model: ModelOption; state: AdminState }) {
+  const submit = useCallback(
+    (event: SubmitEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const fields = new FormData(event.currentTarget);
+      const name = fields.get("name");
+      if (typeof name !== "string") {
+        return;
       }
-    }
-  }, []);
-  const run = useCallback(
-    async (path?: string, body?: object) => {
-      setPending(true);
-      setAdminError("");
-      try {
-        if (path) {
-          await requestJson<unknown>(path, {
-            body: JSON.stringify(body ?? {}),
-            headers: { "Content-Type": "application/json" },
-            method: "POST",
-          });
-        }
-        if (path === "/api/admin/logout") {
-          setModels(undefined);
-        } else {
-          await read();
-        }
-      } catch (error) {
-        if (error instanceof RequestError && error.status === 401) {
-          setModels(undefined);
-        }
-        setAdminError(error instanceof Error ? error.message : "Could not update the catalogue.");
-      }
-      setPending(false);
+      void state.run("/api/admin/models/update", {
+        id: model.id,
+        name: name.trim(),
+      });
     },
-    [read],
+    [model.id, state],
   );
-  useEffect(() => {
-    async function initialize() {
-      try {
-        await read();
-      } catch (error) {
-        setAdminError(error instanceof Error ? error.message : "Could not load the catalogue.");
-      }
-      setPending(false);
-    }
-    void initialize();
-  }, [read]);
-  return { error: adminError, models, pending, run };
+  return (
+    <form onSubmit={submit} className="admin-rename" key={model.name}>
+      <label htmlFor={`model-name-${model.id}`}>Rename {model.name}</label>
+      <input
+        id={`model-name-${model.id}`}
+        name="name"
+        defaultValue={model.name}
+        maxLength={120}
+        required
+        disabled={state.pending}
+      />
+      <button
+        id={`model-save-${model.id}`}
+        className="plain-button"
+        type="submit"
+        disabled={state.pending}
+      >
+        Save model name
+      </button>
+    </form>
+  );
 }
-
-type AdminState = ReturnType<typeof useAdmin>;
 
 function AdminLogin({ state }: { state: AdminState }) {
   const [key, setKey] = useState("");
@@ -117,7 +96,7 @@ function AdminCatalogue({ state }: { state: AdminState }) {
   useEffect(() => {
     heading.current?.focus();
   }, []);
-  const [provider, setProvider] = useState<string>(providers[0].id);
+  const [provider, setProvider] = useState<string>(state.providers[0]?.id ?? "");
   const [name, setName] = useState("");
   const submit = useCallback(
     (event: SubmitEvent<HTMLFormElement>) => {
@@ -157,9 +136,10 @@ function AdminCatalogue({ state }: { state: AdminState }) {
           disabled={state.pending}
           onChange={changeProvider}
         >
-          {providers.map((entry) => (
+          {state.providers.map((entry) => (
             <option key={entry.id} value={entry.id}>
               {entry.name}
+              {!entry.active && " (archived)"}
             </option>
           ))}
         </select>
@@ -176,20 +156,17 @@ function AdminCatalogue({ state }: { state: AdminState }) {
           Add model
         </button>
       </form>
-      <p>Names are permanent. Archive models to stop new reports without losing their history.</p>
+      <p>
+        Names can change without changing reports or shared model filters. Archive models to stop
+        new reports without losing their history.
+      </p>
       {models.length === 0 ? (
         <p>No models for this provider.</p>
       ) : (
         <ul className="admin-models">
           {models.map((model, index) => (
             // oxlint-disable-next-line eslint/no-use-before-define
-            <AdminModel
-              key={model.name}
-              model={model}
-              models={models}
-              index={index}
-              state={state}
-            />
+            <AdminModel key={model.id} model={model} models={models} index={index} state={state} />
           ))}
         </ul>
       )}
@@ -222,16 +199,16 @@ function AdminModel({
   }, [state.pending]);
   const move = useCallback(
     (direction: "up" | "down") => {
-      const names = models.map((entry) => entry.name);
+      const ids = models.map((entry) => entry.id);
       const adjacent = index + (direction === "up" ? -1 : 1);
-      const neighbour = names[adjacent];
+      const neighbour = ids[adjacent];
       if (state.pending || neighbour === undefined) {
         return;
       }
-      names[adjacent] = model.name;
-      names[index] = neighbour;
+      ids[adjacent] = model.id;
+      ids[index] = neighbour;
       moved.current = direction;
-      void state.run("/api/admin/models/order", { names, provider: model.provider });
+      void state.run("/api/admin/models/order", { ids, provider: model.provider });
     },
     [index, model, models, state],
   );
@@ -242,7 +219,7 @@ function AdminModel({
     move("down");
   }, [move]);
   const toggle = useCallback(() => {
-    void state.run("/api/admin/models/state", { ...model, active: !model.active });
+    void state.run("/api/admin/models/state", { active: !model.active, id: model.id });
   }, [model, state]);
   return (
     <li>
@@ -250,6 +227,7 @@ function AdminModel({
         <b>{model.name}</b>
         <small>{model.active ? "Active" : "Archived"}</small>
       </span>
+      <ModelRename model={model} state={state} />
       <div className="admin-model-actions">
         <button
           className="plain-button"
@@ -290,14 +268,21 @@ function ModelAdmin() {
   return (
     <main className="wrap admin" id="main">
       <p className="maker">Administration</p>
-      <h1>Keep the model list current.</h1>
+      <h1>Keep the catalogue current.</h1>
       {state.error && (
         <p className="error" role="alert">
           {state.error}
         </p>
       )}
       {state.pending && <output>Loading catalogue...</output>}
-      {state.models ? <AdminCatalogue state={state} /> : <AdminLogin state={state} />}
+      {state.models ? (
+        <>
+          <ProviderAdmin state={state} />
+          <AdminCatalogue state={state} />
+        </>
+      ) : (
+        <AdminLogin state={state} />
+      )}
     </main>
   );
 }

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 
-import type { Overview } from "@/domain";
+import { parseOverview } from "@/ui/catalogue-data";
 import { loadOverview, requestJson } from "@/ui/data";
 import { ProviderGrid } from "@/ui/providers";
 import { usePublicRefresh } from "@/ui/refresh";
@@ -18,7 +18,10 @@ function Home() {
   const [refreshed, setRefreshed] = useState({ data: loaded, source: loaded });
   const overview = refreshed.source === loaded ? refreshed.data : loaded;
   const error = usePublicRefresh(async () => {
-    setRefreshed({ data: await requestJson<Overview[]>("/api/overview"), source: loaded });
+    setRefreshed({
+      data: parseOverview(await requestJson<unknown>("/api/overview")),
+      source: loaded,
+    });
   });
   return (
     <main className="wrap" id="main">

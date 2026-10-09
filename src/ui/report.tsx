@@ -143,9 +143,17 @@ function Report({ id }: { id: ProviderId }) {
   );
   const options = useMemo(() => {
     const models = [...(session?.models ?? [])];
-    for (const name of [session?.model, state.selectedModel]) {
-      if (name && !models.some((model) => model.name === name)) {
-        models.push({ active: false, name, provider: id });
+    if (session?.savedModel && !models.some((model) => model.id === session.savedModel?.id)) {
+      models.push(session.savedModel);
+    }
+    for (const modelId of [session?.model, state.selectedModel]) {
+      if (modelId && !models.some((model) => model.id === modelId)) {
+        models.push({
+          active: false,
+          id: modelId,
+          name: modelId,
+          provider: id,
+        });
       }
     }
     return models;

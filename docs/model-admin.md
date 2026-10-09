@@ -1,5 +1,7 @@
 # Database-backed model administration
 
+`docs/catalogue-identities.md` supersedes immutable display names: providers and models now use UUID keys, so display names can be edited safely. Provider administration is added to the same protected panel; public routes resolve database-managed slugs.
+
 `docs/catalogue-ordering.md` supersedes archived public-filter visibility: archived entries are admin-only choices and cannot be used to retrieve named historical graphs. It also adds persisted provider-scoped model ordering. Storage retention and provider-wide algorithms are unchanged.
 
 Supersedes hardcoded runtime model validation in `docs/model-reporting.md`. Preserve the user's current edited list as initial seed data only. A D1 `models` table keyed by provider/name is the source of truth. Names are immutable once created; admins add models or archive/reactivate them, not rename/delete history. Archived models remain available for graph filters and existing report restoration, but cannot be selected for a new named-model report. Retraction of an existing archived report remains possible. No model-level algorithm is added.

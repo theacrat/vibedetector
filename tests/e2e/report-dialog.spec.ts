@@ -139,7 +139,7 @@ test("a window conflict refreshes selection and retry verifies the original inte
 }, testInfo) => {
   await setup(page, testInfo.project.name === "desktop" ? "198.51.100.65" : "198.51.100.66");
   let conflict = true;
-  await page.route("**/api/reports/cursor", async (route) => {
+  await page.route("**/api/reports/10000000-0000-4000-8000-000000000008", async (route) => {
     if (conflict) {
       conflict = false;
       await route.fulfill({
@@ -202,7 +202,7 @@ test("a delayed hourly refresh cannot replace a successfully saved selection", a
   await page.clock.install();
   await setup(page, testInfo.project.name === "desktop" ? "198.51.100.69" : "198.51.100.70");
   let delayed: { route: Route; response: APIResponse } | undefined;
-  await page.route("**/api/session/cursor", async (route) => {
+  await page.route("**/api/session/10000000-0000-4000-8000-000000000008", async (route) => {
     const response = await route.fetch();
     delayed = { response, route };
   });

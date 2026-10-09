@@ -10,8 +10,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "vibedetector-community-production",
-      "database_id": "a73bac50-12b3-4bb3-a427-c8207e35dad7",
+      "database_name": "vibedetector-uuid-production",
+      "database_id": "91932361-4b4a-42d2-a422-fea57689125e",
       "migrations_dir": "migrations",
     },
   ],

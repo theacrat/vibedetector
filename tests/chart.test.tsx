@@ -1,10 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { providers } from "@/domain";
 import type { Dashboard } from "@/domain";
 import { Chart } from "@/ui/chart";
 import { timeLabel } from "@/ui/chart-label";
+
+import { provider, modelIds } from "./ui-fixtures";
 
 const empty: Dashboard = {
   asOf: 0,
@@ -17,8 +18,8 @@ const empty: Dashboard = {
   ],
   hourly: 0,
   model: "",
-  models: [{ active: true, name: "Claude Opus 5.5", provider: "chatgpt" }],
-  provider: providers[0],
+  models: [{ active: true, id: modelIds[0], name: "Claude Opus 5.5", provider: provider.id }],
+  provider,
   range: "24h",
   verdict: "insufficient community data",
 };
@@ -39,7 +40,7 @@ const dashboard: Dashboard = {
   ],
   hourly: 8,
 };
-const filtered = { ...dashboard, model: "Claude Opus 5.5" };
+const filtered = { ...dashboard, model: modelIds[0] };
 
 describe("community reports chart", () => {
   it("renders empty activity without inventing a category or baseline", () => {
@@ -79,7 +80,7 @@ describe("community reports chart", () => {
     expect(html).not.toContain("2.0×");
     expect(html).not.toContain("vs. normal");
     expect(html).toContain("Filtered reports; provider verdict uses all models.");
-    expect(html).toContain('<option value="Claude Opus 5.5" selected="">');
+    expect(html).toContain(`<option value="${modelIds[0]}" selected="">`);
   });
 
   it("uses UTC labels regardless of local timezone", () => {

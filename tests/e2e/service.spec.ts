@@ -39,7 +39,7 @@ test("unknown providers return a not found page", async ({ page }) => {
 test("idle reporting controls do not continuously reload the session", async ({ page }) => {
   let sessions = 0;
   page.on("request", (request) => {
-    if (new URL(request.url()).pathname === "/api/session/grok") {
+    if (new URL(request.url()).pathname === "/api/session/10000000-0000-4000-8000-000000000005") {
       sessions += 1;
     }
   });
@@ -92,7 +92,7 @@ test("report API rejects cross-origin and unverified submissions", async ({ requ
   expect(foreign.status()).toBe(403);
   const unverified = await request.post("/api/reports/claude", {
     data: { category: "slow", token: "" },
-    headers: { Origin: "http://127.0.0.1:41873" },
+    headers: { Origin: String(test.info().project.use.baseURL) },
   });
   expect(unverified.ok()).toBe(false);
 });

@@ -1,5 +1,7 @@
 # vibedetector
 
+The provider/model UUID rework is specified in `docs/catalogue-identities.md`. Providers and models have stable IDs separate from editable display names; provider slugs remain URL identifiers. Manage provider metadata, archives and order in `/admin`, alongside model names and order. A display-name edit does not alter reports or filter IDs. A slug edit explicitly changes the page URL. Existing catalogue documentation below is superseded where it describes immutable names or compile-time providers.
+
 Community reports for AI services, built for vibedetector.net. The supplied prototype defines the visual layout. Reports are not official status or evidence of a model change.
 
 ## Local development
@@ -41,7 +43,7 @@ These are the GitHub Actions gates and the local equivalent while Actions billin
 
 Deployment requires explicit approval. No deployment runs automatically from CI.
 
-1. Confirm the production D1 database `vibedetector-community-production` and its `database_id` in `wrangler.jsonc`. The older `vibedetector` database has an unrelated schema and must not be migrated by this service.
+1. Confirm the production D1 database `vibedetector-uuid-production` and its `database_id` in `wrangler.jsonc`. The former dedicated `vibedetector-community-production` database is retained for rollback. The older `vibedetector` database has an unrelated schema and must not be migrated by this service.
 2. Create a managed Turnstile widget restricted to `vibedetector.net`. Set `TURNSTILE_SITE_KEY` in Wrangler vars and `TURNSTILE_SECRET_KEY` through Wrangler secrets. Never commit the secret.
 3. Confirm the target Cloudflare account and ownership of the domain.
 4. Apply production migrations with `bunx wrangler d1 migrations apply DB --remote` after approval.

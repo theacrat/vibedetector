@@ -1,8 +1,8 @@
 import { env } from "cloudflare:workers";
 
-import type { Dashboard, ModelOption, Overview, ProviderId, Range } from "@/domain";
+import type { Dashboard, ModelOption, Overview, Provider, ProviderId, Range } from "@/domain";
 
-import { loadActiveModels } from "./catalogue";
+import { loadActiveModels, loadProviders } from "./catalogue";
 import { dashboardFromDatabase, overviewFromDatabase } from "./queries";
 
 async function readDashboard(id: string, range: Range, model = ""): Promise<Dashboard> {
@@ -17,4 +17,8 @@ async function readModels(id: ProviderId): Promise<ModelOption[]> {
   return loadActiveModels(env.DB, id);
 }
 
-export { readDashboard, readOverview, readModels };
+async function readProviders(): Promise<Provider[]> {
+  return loadProviders(env.DB, true);
+}
+
+export { readDashboard, readOverview, readModels, readProviders };

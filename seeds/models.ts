@@ -1,6 +1,4 @@
-import type { ProviderId } from "@/domain";
-
-const initialModels: Record<ProviderId, readonly string[]> = {
+const initialModels = {
   chatgpt: [
     "GPT-6 Astra",
     "GPT-6.1 Sol",
@@ -54,6 +52,6 @@ const initialModels: Record<ProviderId, readonly string[]> = {
     "Devstral Small",
   ],
   zai: ["GLM-5.3", "GLM-5.2", "GLM-5.1", "GLM-5", "GLM-4.7", "GLM-4.7-Flash"],
-};
+} as const;
 
 export { initialModels };

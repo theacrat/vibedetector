@@ -3,12 +3,13 @@ import { useEffect, useEffectEvent, useRef, useState, useCallback } from "react"
 
 import type { Category, ModelOption, ProviderId } from "@/domain";
 
-import { parseCatalogue } from "./catalogue-data";
 import { requestJson, RequestError } from "./data";
 import { reportingWindowDelay } from "./report-window";
+import { readSession } from "./session-data";
 import { loadTurnstile, mountWidget } from "./turnstile";
 
 interface Session {
+  savedModel?: ModelOption;
   models: ModelOption[];
   category: Category | null;
   model: string | null;
@@ -22,16 +23,6 @@ interface Intent {
 }
 type Phase = "verifying" | "submitting" | "error";
 type ReportState = ReturnType<typeof useReportState>;
-
-async function readSession(id: ProviderId, signal?: AbortSignal) {
-  const session = await requestJson<Session>(`/api/session/${id}`, signal ? { signal } : undefined);
-  if (!Number.isFinite(session.window)) {
-    throw new TypeError("Could not load the reporting window. Please try again.");
-  }
-  // Older session responses omit optional model metadata.
-  // oxlint-disable-next-line unicorn/no-null
-  return { ...session, model: session.model ?? null, models: parseCatalogue(session.models ?? []) };
-}
 
 function useReportState() {
   // DOM callback refs use null when the dialog unmounts.
@@ -283,7 +274,7 @@ function useReportMutation(id: ProviderId, state: ReportState) {
       if (
         !retainingSavedModel &&
         selectedModel &&
-        !session.models.some((model) => model.name === selectedModel && model.active)
+        !session.models.some((model) => model.id === selectedModel && model.active)
       ) {
         setReportError("This model is archived. Choose an active model for a new report.");
         return;
@@ -319,4 +310,4 @@ function useReportMutation(id: ProviderId, state: ReportState) {
 }
 
 export { useReportState, useReportWindow, useReportMutation };
-export type { ReportState };
+export type { ReportState, Session };
