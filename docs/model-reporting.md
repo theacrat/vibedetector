@@ -1,5 +1,7 @@
 # Optional model reporting
 
+Runtime model lists now come from D1, not the initial hardcoded registry. `docs/model-admin.md` supersedes the hardcoded validation and append-only UI list implementation below. The user's edited names are preserved in `seeds/models.ts` and migration seed SQL.
+
 Reports remain provider-level contributions. Add nullable model metadata from a hardcoded provider-specific list. Default `AI` means no model specified, not a guessed model. Heading becomes `My [AI/model selector] feels...`. Selecting a model changes the next report intent; it does not write until a category is submitted. Preserve model metadata across reloads and category changes; undo clears a report's active contribution. One contribution per browser/provider/hour still applies, regardless of model.
 
 Tapping the saved category with a different selected model updates metadata, not undo. Only the same category and same saved model toggles retraction. Cancelled verification must leave the persisted report untouched; the selected draft may remain for a subsequent attempt.
