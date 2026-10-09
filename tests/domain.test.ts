@@ -8,10 +8,18 @@ import {
   ranges,
   isProviderModel,
   isModelFilter,
+  providerModels,
 } from "@/domain";
 
 describe("provider registry", () => {
   it("validates model metadata against its provider and separates filters", () => {
+    expect(Object.keys(providerModels).toSorted()).toEqual(
+      providers.map((provider) => provider.id).toSorted(),
+    );
+    for (const provider of providers) {
+      expect(providerModels[provider.id].length).toBeGreaterThan(0);
+      expect(new Set(providerModels[provider.id]).size).toBe(providerModels[provider.id].length);
+    }
     expect(isProviderModel("claude", "Claude Sonnet 5.5")).toBe(true);
     expect(isProviderModel("claude", "GLM-5.3")).toBe(false);
     expect(isProviderModel("zai", "GLM-5.3")).toBe(true);
