@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { ModelAdmin } from "@/ui/admin";
 
 const Route = createFileRoute("/admin_/providers/$provider")({
-  // Route parameters are accessed through the route declared here.
+  // Route hooks need the hoisted component to close over this route instance.
   // oxlint-disable-next-line eslint/no-use-before-define
   component: ProviderEdit,
   head: () => ({

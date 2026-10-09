@@ -52,17 +52,6 @@ function models(names: string[], provider = claudeId): ModelOption[] {
   }));
 }
 
-const fixtures = {
-  adminProviders,
-  chatgptId,
-  claudeId,
-  cursorId,
-  draftId,
-  models,
-  nextId,
-  savedId,
-  selectedId,
-};
 export {
   claudeId,
   chatgptId,
@@ -74,4 +63,3 @@ export {
   selectedId,
   models,
 };
-export default fixtures;
