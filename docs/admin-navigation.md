@@ -15,3 +15,5 @@ Creation uses the authoritative mutation response to open the new UUID editor. A
 Creation handoff state is one-use and never overrides a later authoritative provider read. Reload/back navigation must show persisted fields, while genuinely dirty inputs remain local until save. A committed create remains identifiable by UUID even if the following catalogue read returns 401; the UI may require sign-in again but must not offer a duplicate create.
 
 Review both PR #7 (`06774c9...c6f4bed`) and this rework against standards and their own specs. Fix every finding and repeat independent reviews until clean before merging this rework. Run exact-head build/format/zero-warning lint/types/full tests/browser/packaging gates. User requested merge, not deployment of this rework.
+
+Review iterations found creation-completion navigation and mutation-refresh failure edge cases; browser regressions must cover delayed completion after leaving the form, committed save plus 503/401 refresh, and create/rename/reload field consistency. Passing ordinary CRUD tests alone is not acceptance for these lifetimes.
