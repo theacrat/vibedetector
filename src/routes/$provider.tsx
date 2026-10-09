@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 
 import { findProvider, isRange } from "@/domain";
 import type { Dashboard, Overview, Range } from "@/domain";
+import { parseCatalogue } from "@/ui/catalogue-data";
 import { Chart } from "@/ui/chart";
 import { loadDashboard, loadOverview, requestJson } from "@/ui/data";
 import { ProviderLogo } from "@/ui/provider-logo";
@@ -82,9 +83,10 @@ function useProviderData() {
       ),
       requestJson<Overview[]>("/api/overview"),
     ]);
+    const models = parseCatalogue(nextDashboard.models);
     if (latest.current === snapshot) {
       setRefreshed({
-        data: { dashboard: nextDashboard, overview: nextOverview },
+        data: { dashboard: { ...nextDashboard, models }, overview: nextOverview },
         source: snapshot,
       });
     }

@@ -144,3 +144,90 @@ test("catalogue refresh preserves a draft and archived saved reports can still b
   );
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
+
+test("an existing archived report can change category but cannot be recreated after undo", async ({
+  page,
+}) => {
+  let category: string | null = "slow";
+  const writes: unknown[] = [];
+  await page.route("**/api/session/claude", async (route) => {
+    await route.fulfill({
+      json: {
+        category,
+        model: "Saved archived model",
+        models: [],
+        siteKey: "test-site-key",
+        window: Math.floor(Date.now() / 3_600_000),
+      },
+    });
+  });
+  await page.route("**/api/reports/claude", async (route) => {
+    const body: unknown = route.request().postDataJSON();
+    writes.push(body);
+    if (body && typeof body === "object" && "category" in body) {
+      // JSON null is a report retraction.
+      // oxlint-disable-next-line unicorn/no-null
+      category = typeof body.category === "string" ? body.category : null;
+    }
+    await route.fulfill({ json: { category, model: "Saved archived model" } });
+  });
+  await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js*", async (route) => {
+    await route.fulfill({
+      body: `window.turnstile = {
+        render(container, options) {
+          const button = document.createElement('button');
+          button.textContent = 'Verify archived report';
+          button.onclick = () => options.callback('test-token');
+          container.append(button);
+          return 'archived-test';
+        },
+        execute() {},
+        remove() {}
+      };`,
+      contentType: "application/javascript",
+    });
+  });
+  await page.goto("/claude");
+  const select = page.getByRole("combobox", { exact: true, name: "Report model" });
+  const broken = page.getByRole("button", { name: /^broken/iu });
+  await expect(select).toHaveValue("Saved archived model");
+  await broken.click();
+  await page.getByRole("button", { name: "Verify archived report" }).click();
+  await expect(broken).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(writes).toMatchObject([{ category: "broken", model: "Saved archived model" }]);
+  await broken.click();
+  await expect(page.getByText("Verifying before removing your report.")).toBeVisible();
+  await page.getByRole("button", { name: "Verify archived report" }).click();
+  await expect(broken).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await broken.click();
+  await expect(page.getByRole("alert")).toHaveText(
+    "This model is archived. Choose an active model for a new report.",
+  );
+  expect(writes).toHaveLength(2);
+});
+
+test("malformed public catalogue refresh retains the current dashboard and shows an error", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.route("**/api/providers/claude?*", async (route) => {
+    await route.fulfill({
+      json: { models: [{ active: "not-a-boolean", name: "Invalid model", provider: "claude" }] },
+    });
+  });
+  await page.goto("/claude");
+  const filter = page.getByRole("combobox", { name: "Filter reports by model" });
+  await expect(page.getByRole("combobox", { exact: true, name: "Report model" })).toBeEnabled();
+  await expect(filter).toBeVisible();
+  const options = await filter.locator("option").allTextContents();
+  const hourly = await page.locator(".sub").textContent();
+  await page.clock.fastForward(60_001);
+  await expect(page.getByRole("alert")).toHaveText(
+    "Live updates are unavailable. Please refresh to try again.",
+  );
+  expect(await filter.locator("option").allTextContents()).toEqual(options);
+  await expect(page.locator(".sub")).toHaveText(hourly ?? "");
+  await expect(page.getByRole("heading", { name: "Couldn't load this page." })).toHaveCount(0);
+});

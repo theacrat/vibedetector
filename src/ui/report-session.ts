@@ -279,8 +279,9 @@ function useReportMutation(id: ProviderId, state: ReportState) {
         return;
       }
       const retracting = session.category === category && session.model === selectedModel;
+      const retainingSavedModel = session.category !== null && session.model === selectedModel;
       if (
-        !retracting &&
+        !retainingSavedModel &&
         selectedModel &&
         !session.models.some((model) => model.name === selectedModel && model.active)
       ) {
