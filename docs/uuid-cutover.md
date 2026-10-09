@@ -11,3 +11,5 @@ Approved scope is Worker `vibedetector` in account `85cd914334836de8bb8e1f0874e1
 7. Remove local export/key staging files. Leave the original dedicated database available for rollback unless cleanup is separately requested after successful verification.
 
 If reports or catalogue edits occur after the export, repeat the snapshot before cutover. This deployment is small and the user is currently the only visitor, but data reconciliation is still a gate. Changing a display name does not change a URL; changing a slug explicitly invalidates the old slug.
+
+Local populated-emulator migration completed with 10 providers, 58 model rows and 237 report rows retained and an empty foreign_key_check result. Production snapshot counts are separate (60 models, 2 reports at capture) and must be reconciled afresh at cutover, not inferred from local test data.
