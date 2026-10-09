@@ -4,6 +4,8 @@ Reports remain provider-level contributions. Add nullable model metadata from a 
 
 Tapping the saved category with a different selected model updates metadata, not undo. Only the same category and same saved model toggles retraction. Cancelled verification must leave the persisted report untouched; the selected draft may remain for a subsequent attempt.
 
+Reload restores the persisted active report model, not an unsaved draft. Reporting selection is scoped to the provider. Hardcoded labels used in persisted metadata are append-only: do not rename or remove labels until a migration/alias policy preserves historical rows and shared URLs. Empty string and `unspecified` are reserved graph-filter values.
+
 Add `/zai` (Z.AI) and `/kimi` (Kimi) to the shared provider registry, homepage, other-provider links, sitemap and logos. Existing providers and URLs stay stable. Hardcoded model lists are UI labels, not an assertion of live availability.
 
 Initial model labels are curated from the models.dev catalogue checked during implementation. Kimi links to Moonshot's official `status.moonshot.cn`. No verified Z.AI status page was found, so link its website as a website, not an official status claim.
