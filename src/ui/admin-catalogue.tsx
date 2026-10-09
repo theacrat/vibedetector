@@ -1,58 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, SubmitEvent } from "react";
 
-import type { ModelOption, Provider } from "@/domain";
+import type { Provider } from "@/domain";
 
 import type { AdminState } from "./admin-data";
-import { useCatalogueOrder } from "./catalogue-order";
-
-function ModelRename({ model, state }: { model: ModelOption; state: AdminState }) {
-  const [name, setName] = useState<string>();
-  const submit = useCallback(
-    async (event: SubmitEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      const saved = await state.run("/api/admin/models/update", {
-        id: model.id,
-        name: (name ?? model.name).trim(),
-      });
-      if (saved) {
-        setName(undefined);
-      }
-    },
-    [model.id, model.name, name, state],
-  );
-  const changeName = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    setName(event.currentTarget.value);
-  }, []);
-  const handleSubmit = useCallback(
-    (event: SubmitEvent<HTMLFormElement>) => {
-      void submit(event);
-    },
-    [submit],
-  );
-  return (
-    <form onSubmit={handleSubmit} className="admin-rename">
-      <label htmlFor={`model-name-${model.id}`}>Rename {model.name}</label>
-      <input
-        id={`model-name-${model.id}`}
-        name="name"
-        value={name ?? model.name}
-        maxLength={120}
-        required
-        disabled={state.pending}
-        onChange={changeName}
-      />
-      <button
-        id={`model-save-${model.id}`}
-        className="plain-button"
-        type="submit"
-        disabled={state.pending}
-      >
-        Save model name
-      </button>
-    </form>
-  );
-}
+import { AdminModel } from "./admin-model";
 
 function AdminLogin({ state }: { state: AdminState }) {
   const [key, setKey] = useState("");
@@ -120,28 +72,34 @@ function AdminCatalogue({
     () => state.models?.filter((model) => model.provider === provider) ?? [],
     [provider, state.models],
   );
+  const ids = useMemo(() => models.map((model) => model.id), [models]);
   return (
     <section className="admin-panel" aria-labelledby="catalogue-title">
       <div className="admin-heading">
         <h2 id="catalogue-title">Model catalogue</h2>
       </div>
-      <details className="admin-add-model">
-        <summary id="admin-add-model-summary">Add a model</summary>
-        <form onSubmit={submit}>
-          <label htmlFor="admin-model">Model name</label>
+      <form className="admin-add-model" onSubmit={submit}>
+        <label htmlFor="admin-model">Add a model</label>
+        <div className="admin-add-model-fields">
           <input
             id="admin-model"
+            aria-label="Model name"
             value={name}
             maxLength={120}
             required
             disabled={state.pending}
             onChange={changeName}
           />
-          <button className="plain-button" type="submit" disabled={state.pending || !name.trim()}>
+          <button
+            id="admin-add-model"
+            className="plain-button"
+            type="submit"
+            disabled={state.pending || !name.trim()}
+          >
             Add model
           </button>
-        </form>
-      </details>
+        </div>
+      </form>
       <p className="admin-help">
         Archived models stay in existing reports but cannot be selected for new reports.
       </p>
@@ -150,93 +108,11 @@ function AdminCatalogue({
       ) : (
         <ul className="admin-models">
           {models.map((model, index) => (
-            // oxlint-disable-next-line eslint/no-use-before-define
-            <AdminModel key={model.id} model={model} models={models} index={index} state={state} />
+            <AdminModel key={model.id} model={model} ids={ids} index={index} state={state} />
           ))}
         </ul>
       )}
     </section>
-  );
-}
-
-// oxlint-disable-next-line eslint/max-lines-per-function
-function AdminModel({
-  model,
-  models,
-  index,
-  state,
-}: {
-  model: ModelOption;
-  models: ModelOption[];
-  index: number;
-  state: AdminState;
-}) {
-  const ids = models.map((entry) => entry.id);
-  const onOrder = useCallback(
-    (order: string[]) => {
-      void state.run("/api/admin/models/order", { ids: order, provider: model.provider });
-    },
-    [model.provider, state],
-  );
-  const { up, down, moveUp, moveDown } = useCatalogueOrder({
-    id: model.id,
-    ids,
-    index,
-    onOrder,
-    pending: state.pending,
-  });
-  const toggle = useCallback(() => {
-    void state.run("/api/admin/models/state", { active: !model.active, id: model.id });
-  }, [model, state]);
-  return (
-    <li>
-      <div className="admin-model-summary">
-        <span>
-          <b>{model.name}</b>
-          <small>{model.active ? "Active" : "Archived"}</small>
-        </span>
-        <details className="admin-id">
-          <summary>Model ID</summary>
-          <code>{model.id}</code>
-        </details>
-      </div>
-      <details className="admin-secondary-actions">
-        <summary>Edit model</summary>
-        <ModelRename model={model} state={state} />
-        <div className="admin-model-actions">
-          <button
-            className="plain-button"
-            ref={up}
-            type="button"
-            disabled={state.pending || index === 0}
-            aria-label={`Move up ${model.name}`}
-            onClick={moveUp}
-          >
-            Move up
-          </button>
-          <button
-            className="plain-button"
-            ref={down}
-            type="button"
-            disabled={state.pending || index === models.length - 1}
-            aria-label={`Move down ${model.name}`}
-            onClick={moveDown}
-          >
-            Move down
-          </button>
-          <button
-            className="plain-button"
-            id={`model-state-${model.id}`}
-            type="button"
-            disabled={state.pending}
-            aria-label={`${model.active ? "Archive" : "Reactivate"} ${model.name}`}
-            onClick={toggle}
-          >
-            {model.active ? "Archive" : "Reactivate"}
-          </button>
-        </div>
-      </details>
-    </li>
   );
 }
 

@@ -454,7 +454,7 @@ test("atomic full-ID orders include archived records, competing orders and appen
   );
   expect(observed20.status).toBe(200);
   const observed21 = await loadModels(db, CLAUDE);
-  expect(observed21.at(-1)?.name).toBe("Appended");
+  expect(observed21[0]?.name).toBe("Appended");
   const observed22 = await loadProviders(db);
   const providers = observed22.map((provider) => provider.id).toReversed();
   await orderCatalogue(db, { ids: providers }, "providers");

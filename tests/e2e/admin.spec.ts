@@ -71,14 +71,8 @@ test("admin key stays out of URLs and storage while UUID catalogue changes persi
   await page.getByRole("link", { name: "Edit ChatGPT" }).click();
   await expect(page.getByRole("heading", { name: "Edit ChatGPT" })).toBeFocused();
   await expect(page.getByLabel("Provider", { exact: true })).toHaveCount(0);
-  await page.getByText("Add a model", { exact: true }).click();
   await page.getByLabel("Model name", { exact: true }).fill("New database model");
   await page.getByRole("button", { name: "Add model" }).click();
-  await page
-    .locator(".admin-models li")
-    .filter({ hasText: "New database model" })
-    .getByText("Edit model", { exact: true })
-    .click();
   await expect(
     page.getByRole("button", { exact: true, name: "Archive New database model" }),
   ).toBeEnabled();
@@ -89,15 +83,21 @@ test("admin key stays out of URLs and storage while UUID catalogue changes persi
     page.getByRole("button", { exact: true, name: "Archive New database model" }),
   ).toBeEnabled();
   expect(writes).toContainEqual({ active: false, id: "30000000-0000-4000-8000-000000000001" });
+  await page.getByRole("button", { exact: true, name: "Edit New database model" }).click();
+  await expect(page.getByLabel("Rename New database model")).toBeFocused();
+  await expect(page.getByLabel("Rename New database model")).toHaveValue("New database model");
   await page.getByLabel("Rename New database model").fill("Corrected model");
   await page
-    .locator(".admin-rename")
+    .locator(".admin-model-row")
     .filter({ has: page.getByLabel("Rename New database model") })
-    .getByRole("button")
+    .getByRole("button", { exact: true, name: "Save New database model" })
     .click();
   await expect(
     page.getByRole("button", { exact: true, name: "Archive Corrected model" }),
   ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { exact: true, name: "Edit Corrected model" }),
+  ).toBeFocused();
   expect(writes).toContainEqual({
     id: "30000000-0000-4000-8000-000000000001",
     name: "Corrected model",
@@ -204,7 +204,6 @@ test("expired authentication returns focus to the key input", async ({ page }) =
   });
   await page.goto("/admin");
   await page.getByRole("link", { name: "Edit Claude" }).click();
-  await page.getByText("Edit model", { exact: true }).click();
   await page.getByRole("button", { exact: true, name: "Archive Live model" }).click();
   await expect(page.getByLabel("Administrator key")).toBeFocused();
   await expect(page.getByRole("alert")).toHaveText("Session expired.");
@@ -236,11 +235,6 @@ test("model UUID order includes archived rows and retains movement focus", async
   await page.goto("/admin");
   await page.getByRole("link", { name: "Edit Claude" }).click();
   const rows = page.locator(".admin-models b");
-  await page
-    .locator(".admin-models li")
-    .filter({ hasText: "First model" })
-    .getByText("Edit model", { exact: true })
-    .click();
   await expect(rows).toHaveText(["First model", "Archived model", "Last model"]);
   await expect(
     page.getByRole("button", { exact: true, name: "Move up First model" }),
@@ -295,11 +289,6 @@ test("reorder waits for authoritative catalogue and errors do not move rows", as
   await page.goto("/admin");
   await page.getByRole("link", { name: "Edit Claude" }).click();
   const rows = page.locator(".admin-models b");
-  await page
-    .locator(".admin-models li")
-    .filter({ hasText: "First model" })
-    .getByText("Edit model", { exact: true })
-    .click();
   const down = page.getByRole("button", { exact: true, name: "Move down First model" });
   await down.click();
   await expect(down).toBeDisabled();
@@ -352,7 +341,6 @@ test("provider edits preserve UUID and slug unless explicitly changed", async ({
   const form = page
     .locator(".admin-provider-form")
     .filter({ has: page.locator(`input[id="${claudeId}-name"]`) });
-  await page.getByText("Provider settings", { exact: true }).click();
   await form.getByLabel("Provider name").fill("Claude corrected");
   await form.getByRole("button", { name: "Save provider" }).click();
   await expect(page.getByRole("heading", { name: "Edit Claude corrected" })).toBeVisible();

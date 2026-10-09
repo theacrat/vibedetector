@@ -63,12 +63,6 @@ function ProviderForm({
   );
   return (
     <form onSubmit={submit} className="admin-provider-form">
-      {provider && (
-        <details className="admin-id">
-          <summary>Provider ID</summary>
-          <code>{provider.id}</code>
-        </details>
-      )}
       {providerFields.map(({ name, label, required }) => (
         <div key={name}>
           <label htmlFor={`${prefix}-${name}`}>{label}</label>

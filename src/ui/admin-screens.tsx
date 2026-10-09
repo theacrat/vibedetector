@@ -36,8 +36,8 @@ function ProviderEditor({ state, providerId }: { state: AdminState; providerId: 
       {provider ? (
         <>
           <AdminCatalogue state={state} selectedProvider={provider} />
-          <details className="admin-panel admin-settings">
-            <summary>Provider settings</summary>
+          <section className="admin-panel admin-settings">
+            <h2>Provider settings</h2>
             <ProviderForm provider={provider} state={state} key={provider.id} />
             <p className="admin-help">
               Archiving a provider hides it from new reports. Existing reports are kept.
@@ -51,7 +51,7 @@ function ProviderEditor({ state, providerId }: { state: AdminState; providerId: 
             >
               {provider.active ? "Archive" : "Reactivate"} provider {provider.name}
             </button>
-          </details>
+          </section>
         </>
       ) : (
         <section className="admin-panel">

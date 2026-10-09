@@ -208,7 +208,7 @@ async function writeModel(db: D1Database, body: unknown, update: boolean): Promi
     await resolveProvider(db, model.provider, false);
     const result = await db
       .prepare(
-        `INSERT INTO models (id, provider, name, active, position) SELECT ?, ?, ?, 1, COALESCE(MAX(position), -1) + 1 FROM models WHERE provider = ? HAVING COUNT(*) < 256`,
+        `INSERT INTO models (id, provider, name, active, position) SELECT ?, ?, ?, 1, COALESCE(MIN(position), 1) - 1 FROM models WHERE provider = ? HAVING COUNT(*) < 256`,
       )
       .bind(crypto.randomUUID(), model.provider, model.name, model.provider)
       .run();
