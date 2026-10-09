@@ -1,4 +1,4 @@
-import type { Category, ProviderId } from "@/domain";
+import type { Category, ModelOption, ProviderId, SessionReport } from "@/domain";
 import { isCategory, isId } from "@/domain";
 
 import { ApiError } from "./security";
@@ -9,11 +9,6 @@ interface Report {
   category: Category | null;
   model?: string | null;
 }
-interface SessionReport {
-  category: Category | null;
-  model: string | null;
-}
-
 function readCategory(row: unknown): Category | null {
   if (
     !row ||
@@ -36,7 +31,24 @@ function readSession(row: unknown): SessionReport {
   ) {
     throw new Error("Invalid stored model");
   }
-  return { category, model: row.model };
+  if (
+    row.model === null ||
+    !("saved_name" in row) ||
+    typeof row.saved_name !== "string" ||
+    !("saved_provider" in row) ||
+    !isId(row.saved_provider) ||
+    !("saved_active" in row) ||
+    (row.saved_active !== 0 && row.saved_active !== 1)
+  ) {
+    return { category, model: row.model };
+  }
+  const savedModel: ModelOption = {
+    active: row.saved_active === 1,
+    id: row.model,
+    name: row.saved_name,
+    provider: row.saved_provider,
+  };
+  return { category, model: row.model, savedModel };
 }
 
 function readReport(row: unknown): Report {
@@ -61,7 +73,9 @@ async function sessionReport(
 ): Promise<SessionReport> {
   const row = await db
     .prepare(
-      "SELECT category, model FROM reports WHERE provider = ? AND identity_hash = ? AND window = ?",
+      `SELECT r.category, r.model, m.name AS saved_name, m.provider AS saved_provider, m.active AS saved_active
+       FROM reports r LEFT JOIN models m ON m.provider = r.provider AND m.id = r.model
+       WHERE r.provider = ? AND r.identity_hash = ? AND r.window = ?`,
     )
     .bind(provider, identity, Math.floor(now / HOUR))
     .first<unknown>();

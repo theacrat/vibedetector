@@ -247,6 +247,7 @@ test("D1 UUID rename stability preserves filtering, deduplication and report res
   expect(await sessionReport(db, CLAUDE, "browser", now)).toEqual({
     category: "broken",
     model: model.id,
+    savedModel: { active: true, id: model.id, name: "Corrected model name", provider: CLAUDE },
   });
   expect(await loadReports(db, CLAUDE, now + 5000)).toEqual([
     { category: "broken", created_at: now, model: model.id },
@@ -255,6 +256,7 @@ test("D1 UUID rename stability preserves filtering, deduplication and report res
   expect(await sessionReport(db, CLAUDE, "browser", now)).toEqual({
     category: null,
     model: model.id,
+    savedModel: { active: true, id: model.id, name: "Corrected model name", provider: CLAUDE },
   });
   const observed3 = await handleApi(request("/api/providers/claude"), bindings(db));
   expect(observed3.status).toBe(404);
@@ -937,4 +939,109 @@ test("every D1 model filter keeps literal provider baseline, hourly total and ve
   const selected = await dashboardFromDatabase(db, CLAUDE, "24h", now, second.id);
   expect(selected.buckets.reduce((sum, bucket) => sum + bucket.broken, 0)).toBe(25);
   expect(selected.buckets.reduce((sum, bucket) => sum + bucket.slow, 0)).toBe(0);
+});
+
+test("session exposes renamed archived saved metadata only for its owner and provider", async () => {
+  const db = await database();
+  const model = await firstModel(db);
+  const first = await handleApi(request("/api/session/claude"), bindings(db));
+  const cookie = first.headers.get("Set-Cookie")?.split(";")[0] ?? "";
+  const window = Math.floor(Date.now() / HOUR);
+  const report = await handleApi(
+    request(
+      "/api/reports/claude",
+      { category: "slow", model: model.id, token: "dummy", window },
+      cookie,
+    ),
+    bindings(db),
+    verified,
+  );
+  expect(report.status).toBe(200);
+  await db
+    .prepare("UPDATE models SET name = 'Archived corrected label', active = 0 WHERE id = ?")
+    .bind(model.id)
+    .run();
+  const restored = await handleApi(request("/api/session/claude", undefined, cookie), bindings(db));
+  const body: unknown = await restored.json();
+  expect(body).toMatchObject({
+    category: "slow",
+    model: model.id,
+    savedModel: { active: false, id: model.id, name: "Archived corrected label", provider: CLAUDE },
+  });
+  const stranger = await handleApi(request("/api/session/claude"), bindings(db));
+  const strangerBody: unknown = await stranger.json();
+  expect(strangerBody).not.toHaveProperty("savedModel");
+  const otherProvider = await handleApi(
+    request("/api/session/chatgpt", undefined, cookie),
+    bindings(db),
+  );
+  const otherBody: unknown = await otherProvider.json();
+  expect(otherBody).not.toHaveProperty("savedModel");
+  const catalogue = await loadActiveModels(db, CLAUDE);
+  expect(catalogue.some((entry) => entry.id === model.id)).toBe(false);
+});
+
+test("provider and model display updates retain archive state, ordering and immutable ownership", async () => {
+  const db = await database();
+  const cookie = await admin(db);
+  const model = await firstModel(db);
+  await db.prepare("UPDATE models SET active = 0, position = 71 WHERE id = ?").bind(model.id).run();
+  await db
+    .prepare("UPDATE providers SET active = 0, position = 72 WHERE id = ?")
+    .bind(CLAUDE)
+    .run();
+  const modelUpdate = await handleApi(
+    request(
+      "/api/admin/models/update",
+      { active: true, id: model.id, name: "New model display", position: 0, provider: CHATGPT },
+      cookie,
+    ),
+    bindings(db),
+  );
+  expect(modelUpdate.status).toBe(200);
+  const providerUpdate = await handleApi(
+    request(
+      "/api/admin/providers/update",
+      { ...initialProvider, active: true, name: "New provider display", position: 0 },
+      cookie,
+    ),
+    bindings(db),
+  );
+  expect(providerUpdate.status).toBe(200);
+  expect(
+    await db
+      .prepare("SELECT active, position, provider FROM models WHERE id = ?")
+      .bind(model.id)
+      .first<{ active: number; position: number; provider: string }>(),
+  ).toEqual({ active: 0, position: 71, provider: CLAUDE });
+  expect(
+    await db
+      .prepare("SELECT active, position FROM providers WHERE id = ?")
+      .bind(CLAUDE)
+      .first<{ active: number; position: number }>(),
+  ).toEqual({ active: 0, position: 72 });
+});
+
+test("report API missing IP and limiter cannot mutate persisted UUID report state", async () => {
+  const db = await database();
+  const model = await firstModel(db);
+  const now = Date.now();
+  await saveReport(db, CLAUDE, "unchanged", "slow", now, model.id);
+  const env = bindings(db);
+  Reflect.deleteProperty(env, "REPORT_RATE_LIMIT");
+  const body = {
+    category: "broken",
+    model: model.id,
+    token: "dummy",
+    window: Math.floor(now / HOUR),
+  };
+  const missingLimiter = await handleApi(request("/api/reports/claude", body), env, verified);
+  expect(missingLimiter.status).toBe(503);
+  const noIp = request("/api/reports/claude", body);
+  noIp.headers.delete("CF-Connecting-IP");
+  const missingIp = await handleApi(noIp, bindings(db), verified);
+  expect(missingIp.status).toBe(503);
+  expect(await loadReports(db, CLAUDE, now)).toEqual([
+    { category: "slow", created_at: now, model: model.id },
+  ]);
 });

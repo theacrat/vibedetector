@@ -40,6 +40,11 @@ interface ModelOption {
   name: string;
   active: boolean;
 }
+interface SessionReport {
+  category: Category | null;
+  model: string | null;
+  savedModel?: ModelOption;
+}
 interface Overview {
   provider: Provider;
   hourly: number;
@@ -58,4 +63,14 @@ function isCategory(value: unknown): value is Category {
   return categories.some((category) => category === value);
 }
 export { categories, ranges, isId, isRange, isCategory };
-export type { Category, Provider, ProviderId, Range, Bucket, Dashboard, Overview, ModelOption };
+export type {
+  Category,
+  Provider,
+  ProviderId,
+  Range,
+  Bucket,
+  Dashboard,
+  Overview,
+  ModelOption,
+  SessionReport,
+};
