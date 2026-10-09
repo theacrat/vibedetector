@@ -11,6 +11,8 @@ Optional model reporting adds `/zai` and `/kimi`; their reports use the same pro
 
 Reports may include a provider-scoped model label as nullable metadata. Model selection does not create an additional contribution, change the deduplication window, or change provider verdict algorithms. Graph filters affect displayed category buckets only; provider totals and baselines remain unfiltered.
 
+Model options are managed in D1. Initial edited lists are migration seeds only. The key-protected admin panel archives/reactivates immutable names so historical reports remain filterable. `docs/model-admin.md` defines authentication and catalogue boundaries.
+
 `Dashboard` contains UTC-aligned buckets, hourly count, baseline and verdict. Ranges are 6h (15-minute buckets), 24h (30-minute buckets) and 7d (3-hour buckets). Insufficient history or volume means insufficient data, never good vibes.
 
 Include the partial boundary buckets needed to cover the full selected duration. Label the newest count as `since <device-local time>`, not a rolling count. Chart labels use the device timezone after hydration, while storage and aggregation remain UTC. The hero separately counts the actual trailing hour. Session responses identify their fixed reporting window; mutations reject stale windows so an hour rollover cannot falsely undo an earlier contribution.
