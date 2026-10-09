@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, SubmitEvent } from "react";
 
 import { providers } from "@/domain";
 import type { ModelOption } from "@/domain";
 
+import { parseCatalogue } from "./catalogue-data";
 import { requestJson, RequestError } from "./data";
 
 import "./admin.css";
@@ -15,7 +16,8 @@ function useAdmin() {
   const [adminError, setAdminError] = useState("");
   const read = useCallback(async () => {
     try {
-      setModels(await requestJson<ModelOption[]>("/api/admin/models"));
+      const catalogue = await requestJson<unknown>("/api/admin/models");
+      setModels(parseCatalogue(catalogue));
     } catch (error) {
       if (error instanceof RequestError && error.status === 401) {
         setModels(undefined);
@@ -36,7 +38,11 @@ function useAdmin() {
             method: "POST",
           });
         }
-        await read();
+        if (path === "/api/admin/logout") {
+          setModels(undefined);
+        } else {
+          await read();
+        }
       } catch (error) {
         if (error instanceof RequestError && error.status === 401) {
           setModels(undefined);
@@ -65,6 +71,12 @@ type AdminState = ReturnType<typeof useAdmin>;
 
 function AdminLogin({ state }: { state: AdminState }) {
   const [key, setKey] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!state.pending) {
+      input.current?.focus();
+    }
+  }, [state.pending]);
   const submit = useCallback(
     (event: SubmitEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -84,6 +96,7 @@ function AdminLogin({ state }: { state: AdminState }) {
       <label htmlFor="admin-key">Administrator key</label>
       <input
         id="admin-key"
+        ref={input}
         type="password"
         value={key}
         autoComplete="off"
@@ -100,6 +113,10 @@ function AdminLogin({ state }: { state: AdminState }) {
 
 // oxlint-disable-next-line eslint/max-lines-per-function
 function AdminCatalogue({ state }: { state: AdminState }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
   const [provider, setProvider] = useState<string>(providers[0].id);
   const [name, setName] = useState("");
   const submit = useCallback(
@@ -122,7 +139,9 @@ function AdminCatalogue({ state }: { state: AdminState }) {
   return (
     <section className="admin-panel" aria-labelledby="catalogue-title">
       <div className="admin-heading">
-        <h2 id="catalogue-title">Model catalogue</h2>
+        <h2 id="catalogue-title" ref={heading} tabIndex={-1}>
+          Model catalogue
+        </h2>
         <button className="plain-button" disabled={state.pending} type="button" onClick={logout}>
           Sign out
         </button>

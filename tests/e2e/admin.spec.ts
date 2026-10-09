@@ -62,6 +62,7 @@ test("admin key stays out of URLs and storage while catalogue changes persist", 
   await input.fill(key);
   await page.getByRole("button", { exact: true, name: "Sign in" }).click();
   await expect(page.getByRole("heading", { name: "Model catalogue" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Model catalogue" })).toBeFocused();
   expect(await page.getByLabel("Provider").locator("option").count()).toBe(10);
   await page.getByLabel("Provider").selectOption("chatgpt");
   await page.getByLabel("Model name").fill("New database model");
@@ -81,6 +82,7 @@ test("admin key stays out of URLs and storage while catalogue changes persist", 
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(input).toBeEnabled();
   await expect(input).toHaveValue("");
+  await expect(input).toBeFocused();
   const storage = await page.evaluate(() =>
     [localStorage, sessionStorage].map((store) =>
       Array.from({ length: store.length }, (_unused, index) => {
@@ -106,4 +108,65 @@ test("admin configuration errors are visible", async ({ page }) => {
   await expect(page.getByRole("alert")).toHaveText(
     "Administration is unavailable. Configure ADMIN_KEY.",
   );
+});
+
+for (const catalogue of [
+  { models: [] },
+  [{ active: "true", name: "Invalid", provider: "claude" }],
+  [{ active: true, name: "Invalid", provider: "unknown" }],
+  [{ active: true, name: 123, provider: "claude" }],
+]) {
+  test(`malformed catalogue ${JSON.stringify(catalogue)} shows a recoverable error`, async ({
+    page,
+  }) => {
+    await page.route("**/api/admin/models", async (route) => {
+      await route.fulfill({ json: catalogue });
+    });
+    await page.goto("/admin");
+    await expect(page.getByRole("alert")).toHaveText(
+      "Could not load the model catalogue. Please try again.",
+    );
+    await expect(page.getByLabel("Administrator key")).toBeEnabled();
+    await expect(page.getByRole("heading", { name: "Model catalogue" })).toHaveCount(0);
+  });
+}
+
+test("logout clears the catalogue without a follow-up read even if reads would fail", async ({
+  page,
+}) => {
+  let loggedOut = false;
+  let readsAfterLogout = 0;
+  await page.route("**/api/admin/**", async (route) => {
+    if (route.request().url().endsWith("/logout")) {
+      loggedOut = true;
+      await route.fulfill({ json: { ok: true } });
+      return;
+    }
+    if (loggedOut) {
+      readsAfterLogout += 1;
+      await route.fulfill({ json: { error: "Catalogue unavailable." }, status: 503 });
+      return;
+    }
+    await route.fulfill({ json: [{ active: true, name: "Live model", provider: "claude" }] });
+  });
+  await page.goto("/admin");
+  await expect(page.getByRole("heading", { name: "Model catalogue" })).toBeFocused();
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page.getByLabel("Administrator key")).toBeFocused();
+  await expect(page.getByRole("heading", { name: "Model catalogue" })).toHaveCount(0);
+  expect(readsAfterLogout).toBe(0);
+});
+
+test("expired authentication returns focus to the key input", async ({ page }) => {
+  await page.route("**/api/admin/**", async (route) => {
+    await route.fulfill(
+      route.request().method() === "POST"
+        ? { json: { error: "Session expired." }, status: 401 }
+        : { json: [{ active: true, name: "Live model", provider: "claude" }] },
+    );
+  });
+  await page.goto("/admin");
+  await page.getByRole("button", { name: "Archive Live model" }).click();
+  await expect(page.getByLabel("Administrator key")).toBeFocused();
+  await expect(page.getByRole("alert")).toHaveText("Session expired.");
 });

@@ -3,6 +3,7 @@ import { useEffect, useEffectEvent, useRef, useState, useCallback } from "react"
 
 import type { Category, ModelOption, ProviderId } from "@/domain";
 
+import { parseCatalogue } from "./catalogue-data";
 import { requestJson, RequestError } from "./data";
 import { reportingWindowDelay } from "./report-window";
 import { loadTurnstile, mountWidget } from "./turnstile";
@@ -29,7 +30,7 @@ async function readSession(id: ProviderId, signal?: AbortSignal) {
   }
   // Older session responses omit optional model metadata.
   // oxlint-disable-next-line unicorn/no-null
-  return { ...session, model: session.model ?? null, models: session.models ?? [] };
+  return { ...session, model: session.model ?? null, models: parseCatalogue(session.models ?? []) };
 }
 
 function useReportState() {
