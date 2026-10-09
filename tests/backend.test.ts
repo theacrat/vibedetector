@@ -1143,6 +1143,111 @@ test("admin order persists full provider permutations, rejects invalid requests 
   expect(appended.results.map((row) => row.position)).toEqual([0, 1, 2, 3, 4]);
 });
 
+test("large catalogue orders use the admin body limit and new models stop at 256", async () => {
+  const db = await database();
+  const bindings = adminBindings(db);
+  const login = await handleApi(adminRequest("login", { key: adminKey }), bindings);
+  const cookie = cookieHeader(login);
+  const longNames = Array.from(
+    { length: 34 },
+    (_value, index) => `Claude Long ${String(index).padStart(2, "0")} ${"x".repeat(100)}`,
+  );
+  for (const name of longNames) {
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    const status = await apiStatus(
+      adminRequest("models", { name, provider: "claude" }, cookie),
+      bindings,
+    );
+    expect(status).toBe(200);
+  }
+  const allModels = await loadModels(db, "claude");
+  const names = allModels.map((model) => model.name).toReversed();
+  expect(JSON.stringify({ names, provider: "claude" }).length).toBeGreaterThan(4096);
+  expect(
+    await apiStatus(adminRequest("models/order", { names, provider: "claude" }, cookie), bindings),
+  ).toBe(200);
+  const orderedModels = await loadModels(db, "claude");
+  expect(orderedModels.map((model) => model.name)).toEqual(names);
+
+  const oversized = JSON.stringify({ names: [...names, "z".repeat(1200)], provider: "claude" });
+  const streamed = new Request("http://localhost/api/admin/models/order", {
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(oversized));
+        controller.enqueue(new Uint8Array(262_145));
+        controller.close();
+      },
+    }),
+    headers: { "Content-Type": "application/json", Cookie: cookie, Origin: "http://localhost" },
+    method: "POST",
+  });
+  expect(await apiStatus(streamed, bindings)).toBe(413);
+  const oversizedHeader = adminRequest("models/order", { names, provider: "claude" }, cookie);
+  oversizedHeader.headers.set("Content-Length", "262145");
+  expect(await apiStatus(oversizedHeader, bindings)).toBe(413);
+  const hugeName = "x".repeat(5000);
+  expect(
+    await apiStatus(
+      adminRequest("models", { name: hugeName, provider: "claude" }, cookie),
+      bindings,
+    ),
+  ).toBe(413);
+
+  const count = await db
+    .prepare("SELECT COUNT(*) AS total FROM models WHERE provider = 'claude'")
+    .first<number>("total");
+  expect(count).toBeGreaterThan(0);
+  for (let index = count ?? 0; index < 255; index += 1) {
+    // oxlint-disable-next-line eslint/no-await-in-loop
+    const status = await apiStatus(
+      adminRequest("models", { name: `Claude Capacity ${index}`, provider: "claude" }, cookie),
+      bindings,
+    );
+    expect(status).toBe(200);
+  }
+  const racing = await Promise.all(
+    ["Claude Capacity A", "Claude Capacity B"].map(async (name) =>
+      apiStatus(adminRequest("models", { name, provider: "claude" }, cookie), bindings),
+    ),
+  );
+  expect(racing.toSorted((left, right) => left - right)).toEqual([200, 400]);
+  expect(
+    await apiStatus(
+      adminRequest("models", { name: "Claude Capacity Overflow", provider: "claude" }, cookie),
+      bindings,
+    ),
+  ).toBe(400);
+  const finalCount = await db
+    .prepare("SELECT COUNT(*) AS total FROM models WHERE provider = 'claude'")
+    .first<number>("total");
+  expect(finalCount).toBe(256);
+  const fullCatalogue = await loadModels(db, "claude");
+  const fullNames = fullCatalogue.map((model) => model.name).toReversed();
+  expect(
+    await apiStatus(
+      adminRequest("models/order", { names: fullNames, provider: "claude" }, cookie),
+      bindings,
+    ),
+  ).toBe(200);
+  expect(
+    await apiStatus(
+      adminRequest("models/order", { names: [...fullNames, "extra"], provider: "claude" }, cookie),
+      bindings,
+    ),
+  ).toBe(400);
+  expect(
+    await apiStatus(
+      adminRequest("models", { name: longNames[0], provider: "claude" }, cookie),
+      bindings,
+    ),
+  ).toBe(200);
+  expect(
+    await db
+      .prepare("SELECT COUNT(*) AS total FROM models WHERE provider = 'claude'")
+      .first<number>("total"),
+  ).toBe(256);
+});
+
 test("catalogue changes between order validation and D1 batch leave all positions untouched", async () => {
   const db = await database();
   await db

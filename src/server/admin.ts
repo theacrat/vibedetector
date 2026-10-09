@@ -121,12 +121,21 @@ async function mutateCatalogue(
   }
   const model = parseModel(body);
   if (path === "/api/admin/models") {
-    await bindings.DB.prepare(
+    const result = await bindings.DB.prepare(
       `INSERT OR IGNORE INTO models (provider, name, active, position)
-       SELECT ?, ?, 1, COALESCE(MAX(position), -1) + 1 FROM models WHERE provider = ?`,
+       SELECT ?, ?, 1, COALESCE(MAX(position), -1) + 1 FROM models WHERE provider = ?
+       HAVING COUNT(*) < 256`,
     )
       .bind(model.provider, model.name, model.provider)
       .run();
+    if (
+      result.meta.changes === 0 &&
+      !(await bindings.DB.prepare("SELECT 1 FROM models WHERE provider = ? AND name = ?")
+        .bind(model.provider, model.name)
+        .first())
+    ) {
+      throw new ApiError(400, "Catalogue limit is 256 models per provider");
+    }
   } else if (path === "/api/admin/models/state") {
     if (
       !body ||
@@ -178,7 +187,7 @@ async function handleAdmin(request: Request, bindings: Cloudflare.Env): Promise<
   if (request.method !== "POST") {
     throw new ApiError(405, "Method not allowed");
   }
-  const body = await readJson(request);
+  const body = await readJson(request, path === "/api/admin/models/order" ? 262_144 : 4096);
   if (path === "/api/admin/logout") {
     return Response.json(
       { authenticated: false },

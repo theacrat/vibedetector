@@ -94,6 +94,9 @@ async function orderModels(db: D1Database, body: unknown): Promise<void> {
     throw new ApiError(400, "Invalid provider");
   }
   const names: string[] = body.names;
+  if (names.length > 256) {
+    throw new ApiError(400, "Catalogue limit is 256 models per provider");
+  }
   const encoded = JSON.stringify(names);
   const models = await loadModels(db, provider.id);
   const catalogue = new Set(models.map((model) => model.name));
