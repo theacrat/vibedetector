@@ -1,5 +1,6 @@
 import { isId } from "@/domain";
 import type { ModelOption, Provider } from "@/domain";
+import { compareProviders } from "@/provider-order";
 
 import { ApiError } from "./security";
 
@@ -122,7 +123,7 @@ async function loadProviders(db: D1Database, activeOnly = false): Promise<Provid
   if (!result.success) {
     throw new Error("Catalogue read failed");
   }
-  return result.results.map(readProvider);
+  return result.results.map(readProvider).toSorted(compareProviders);
 }
 
 async function resolveProvider(

@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 
 import type { Overview } from "@/domain";
+import { compareProviders } from "@/provider-order";
 
 import { ProviderLogo } from "./provider-logo";
 
@@ -28,6 +29,7 @@ export function ProviderGrid({ overview }: { overview: Overview[] }) {
     <div className="grid">
       {overview
         .filter(({ provider }) => provider.active)
+        .toSorted((left, right) => compareProviders(left.provider, right.provider))
         .map(({ provider, hourly, buckets }) => {
           const line = sparkLine(buckets);
           const params = paramsById.get(provider.id);

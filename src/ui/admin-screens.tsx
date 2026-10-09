@@ -2,6 +2,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type { Provider } from "@/domain";
+import { compareProviders } from "@/provider-order";
 
 import type { AdminScreen } from "./admin";
 import { AdminCatalogue, AdminLogin } from "./admin-catalogue";
@@ -84,14 +85,7 @@ function ProviderListRow({ provider }: { provider: Provider }) {
 }
 
 function ProviderList({ state }: { state: AdminState }) {
-  const providers = useMemo(
-    () =>
-      state.providers.toSorted(
-        (left, right) =>
-          left.name.localeCompare(right.name, "en") || left.id.localeCompare(right.id),
-      ),
-    [state.providers],
-  );
+  const providers = useMemo(() => state.providers.toSorted(compareProviders), [state.providers]);
   return (
     <section className="admin-panel" aria-labelledby="providers-title">
       <div className="admin-heading">

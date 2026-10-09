@@ -459,7 +459,9 @@ test("atomic full-ID orders include archived records, competing orders and appen
   const providers = observed22.map((provider) => provider.id).toReversed();
   await orderCatalogue(db, { ids: providers }, "providers");
   const observed23 = await loadProviders(db);
-  expect(observed23.map((provider) => provider.id)).toEqual(providers);
+  expect(observed23.map((provider) => provider.id)).toEqual(
+    observed22.map((provider) => provider.id),
+  );
   const oversized = new Request("http://localhost/api/admin/providers/order", {
     body: " ".repeat(262_145),
     headers: { "Content-Type": "application/json", Cookie: cookie, Origin: "http://localhost" },
