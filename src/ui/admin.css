@@ -96,9 +96,6 @@ form.admin-panel {
 .admin-secondary-actions[open] {
   color: var(--paper);
 }
-.admin-secondary-actions > summary {
-  display: inline-block;
-}
 .admin-secondary-actions .admin-model-actions {
   margin-top: 8px;
 }
@@ -185,7 +182,6 @@ form.admin-panel {
   }
   .admin-models li {
     align-items: flex-start;
-    flex-direction: column;
   }
   .admin-model-summary {
     align-items: flex-start;

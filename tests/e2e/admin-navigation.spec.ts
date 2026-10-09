@@ -389,6 +389,12 @@ test("model operations retain unsaved fields and failed writes retain edits", as
   await expect(page.getByLabel("Provider name")).toHaveValue("Unsaved provider");
   await expect(page.getByLabel("Rename First model")).toHaveValue("Unsaved model");
   await expect(page.getByLabel("Model name", { exact: true })).toHaveValue("Unsaved addition");
+  await page.getByText("Provider settings", { exact: true }).click();
+  await page.getByText("Add a model", { exact: true }).click();
+  await page.getByText("Provider settings", { exact: true }).click();
+  await page.getByText("Add a model", { exact: true }).click();
+  await expect(page.getByLabel("Provider name")).toHaveValue("Unsaved provider");
+  await expect(page.getByLabel("Model name", { exact: true })).toHaveValue("Unsaved addition");
   rejectWrites = true;
   await page.getByRole("button", { name: "Save provider" }).click();
   await expect(page.getByRole("alert")).toHaveText("Write failed.");

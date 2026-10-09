@@ -143,7 +143,7 @@ function AdminCatalogue({
         </form>
       </details>
       <p className="admin-help">
-        Archived models stay in old reports but are hidden from new ones.
+        Archived models stay in existing reports but cannot be selected for new reports.
       </p>
       {models.length === 0 ? (
         <p>No models for this provider.</p>
