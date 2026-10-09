@@ -3,6 +3,7 @@
 ## Product
 
 Community reports of AI quality, latency and availability, not official outage declarations. Follow the supplied prototype's charcoal palette, typefaces, raised purple/amber/red buttons and chart layout. `/` lists eight providers with separate `/claude`, `/chatgpt`, `/gemini`, `/copilot`, `/grok`, `/mistral`, `/deepseek` and `/cursor` pages. Never fabricate activity.
+Optional model reporting adds `/zai` and `/kimi`; their reports use the same provider-level algorithms. `docs/model-reporting.md` defines model metadata and graph-filter boundaries.
 
 ## Domain
 
