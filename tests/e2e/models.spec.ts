@@ -106,6 +106,7 @@ for (const model of ["invented-model", "GLM-5.3"]) {
 test("catalogue refresh preserves a draft and archived saved reports can still be undone", async ({
   page,
 }) => {
+  await page.clock.install();
   let refreshed = false;
   await page.route("**/api/session/claude", async (route) => {
     await route.fulfill({
@@ -132,7 +133,6 @@ test("catalogue refresh preserves a draft and archived saved reports can still b
   await expect(page.getByText("Verifying before removing your report.")).toBeVisible();
   await page.getByRole("button", { exact: true, name: "Cancel" }).click();
   await select.selectOption("Draft model");
-  await page.clock.install();
   refreshed = true;
   await page.clock.fastForward(60_001);
   await expect(select.locator('option[value="New active model"]')).toHaveCount(1);
