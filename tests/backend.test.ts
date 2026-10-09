@@ -1,7 +1,6 @@
 /* oxlint-disable unicorn/no-null -- SQL and JSON encode absent metadata and retractions as null. */
 import { afterAll, expect, test } from "bun:test";
 
-import { initialProviders } from "@seed/provider";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 
 import { isId } from "@/domain";
@@ -31,6 +30,16 @@ const migrations = [
   "0003_model_catalogue.sql",
   "0004_catalogue_identities.sql",
 ];
+const initialProvider = {
+  active: true,
+  id: CLAUDE,
+  logo: "/logos/claude.svg",
+  maker: "Anthropic",
+  name: "Claude",
+  slug: "claude",
+  status: "https://status.claude.com",
+  statusLabel: "Official status",
+};
 
 afterAll(async () => {
   await Promise.all(runtimes.map(async (runtime) => runtime.dispose()));
@@ -72,11 +81,11 @@ async function database(legacy = false): Promise<D1Database> {
 function bindings(db: D1Database): Cloudflare.Env {
   return {
     ADMIN_KEY: SECRET,
-    ADMIN_RATE_LIMIT: { limit: async () => ({ success: true }) },
+    ADMIN_RATE_LIMIT: { limit: () => Promise.resolve({ success: true }) },
     DB: db,
-    REPORT_RATE_LIMIT: { limit: async () => ({ success: true }) },
-    TURNSTILE_HOSTNAME: "localhost",
-    TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
+    REPORT_RATE_LIMIT: { limit: () => Promise.resolve({ success: true }) },
+    TURNSTILE_HOSTNAME: "vibedetector.net",
+    TURNSTILE_SITE_KEY: "0x4AAAAAAFROSyaakxb3TQIa",
   };
 }
 
@@ -168,7 +177,7 @@ test("migration fails atomically for unknown named metadata rather than nulling 
     )
     .run();
   await expect(migrate(db, migrations[3] ?? "")).rejects.toThrow();
-  expect(await db.prepare("SELECT model FROM reports").first()).toEqual({
+  expect(await db.prepare("SELECT model FROM reports").first<{ model: string }>()).toEqual({
     model: "Unmapped historical model",
   });
   expect(
@@ -248,8 +257,8 @@ test("admin creates, renames, archives and restores providers and models without
     bindings(db),
   );
   expect(created.status).toBe(200);
-  const providers = await created.json();
-  const provider = providers.find((entry) => entry.slug === "new-provider");
+  const providers = await loadProviders(db);
+  const provider = providers.find((entry: Provider) => entry.slug === "new-provider");
   if (!provider) {
     throw new Error("Missing created provider");
   }
@@ -334,7 +343,7 @@ test("admin creates, renames, archives and restores providers and models without
 test("provider URLs and slugs reject unsafe values and duplicate display values return 409", async () => {
   const db = await database();
   const cookie = await admin(db);
-  const provider = initialProviders[0];
+  const provider = initialProvider;
   if (!provider) {
     throw new Error("Missing provider seed");
   }
@@ -450,7 +459,10 @@ test("HTTP reports return UUIDs and restore them through the same signed browser
     verified,
   );
   expect(report.status).toBe(200);
-  expect(await report.json()).toEqual({ category: "slow", model: model.id });
+  expect((await report.json()) as { category: string; model: string }).toEqual({
+    category: "slow",
+    model: model.id,
+  });
   expect(
     await (await handleApi(request(`/api/session/${CLAUDE}`, undefined, cookie), env)).json(),
   ).toMatchObject({ category: "slow", model: model.id });
@@ -587,7 +599,7 @@ test("dynamic sitemap uses escaped active slugs and follows rename", async () =>
 });
 
 test("provider-only anomaly metrics stay unchanged by model UUID filters", () => {
-  const provider = initialProviders[0];
+  const provider = initialProvider;
   if (!provider) {
     throw new Error("Missing provider seed");
   }
