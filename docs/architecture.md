@@ -1,5 +1,7 @@
 # Vibedetector architecture
 
+The UUID catalogue rework in `docs/catalogue-identities.md` supersedes the fixed provider registry and name-keyed model contracts below. Providers and models are database-managed records with immutable UUIDs and editable display fields.
+
 ## Product
 
 Community reports of AI quality, latency and availability, not official outage declarations. Follow the supplied prototype's charcoal palette, typefaces, raised purple/amber/red buttons and chart layout. `/` lists eight providers with separate `/claude`, `/chatgpt`, `/gemini`, `/copilot`, `/grok`, `/mistral`, `/deepseek` and `/cursor` pages. Never fabricate activity.
