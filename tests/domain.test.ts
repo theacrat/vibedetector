@@ -1,33 +1,20 @@
+import { initialModels } from "@seed/models";
 import { describe, expect, it } from "vitest";
 
-import {
-  findProvider,
-  isCategory,
-  isRange,
-  providers,
-  ranges,
-  isProviderModel,
-  isModelFilter,
-  providerModels,
-} from "@/domain";
+import { findProvider, isCategory, isRange, providers, ranges } from "@/domain";
 
 describe("provider registry", () => {
-  it("validates model metadata against its provider and separates filters", () => {
-    expect(Object.keys(providerModels).toSorted()).toEqual(
+  it("preserves unique initial model seeds for every provider", () => {
+    expect(Object.keys(initialModels).toSorted()).toEqual(
       providers.map((provider) => provider.id).toSorted(),
     );
     for (const provider of providers) {
-      expect(providerModels[provider.id].length).toBeGreaterThan(0);
-      expect(new Set(providerModels[provider.id]).size).toBe(providerModels[provider.id].length);
+      expect(initialModels[provider.id].length).toBeGreaterThan(0);
+      expect(new Set(initialModels[provider.id]).size).toBe(initialModels[provider.id].length);
     }
-    expect(isProviderModel("claude", "Claude Sonnet 5.5")).toBe(true);
-    expect(isProviderModel("claude", "GLM-5.3")).toBe(false);
-    expect(isProviderModel("zai", "GLM-5.3")).toBe(true);
-    expect(isProviderModel("kimi", "Kimi K3")).toBe(true);
-    expect(isModelFilter("claude", "")).toBe(true);
-    expect(isModelFilter("claude", "unspecified")).toBe(true);
-    expect(isProviderModel("claude", "unspecified")).toBe(false);
-    expect(isModelFilter("claude", "<script>")).toBe(false);
+    expect(initialModels.chatgpt).toContain("GPT-6 Astra");
+    expect(initialModels.chatgpt).toContain("GPT-5.6 Terra");
+    expect(initialModels.chatgpt).toContain("GPT-5.6 Luna");
   });
   it("has ten distinct, shareable provider paths", () => {
     expect(providers.map((provider) => provider.id)).toEqual([

@@ -34,11 +34,12 @@
     "noUnusedParameters": true,
     "paths": {
       "@/*": ["./src/*"],
-      "#/*": ["./src/generated/*"]
+      "#/*": ["./src/generated/*"],
+      "@seed/*": ["./seeds/*"]
     },
     "strict": true,
 
     "types": ["vite/client", "./src/generated/worker.d.ts", "bun"]
   },
-  "include": ["src", "tests", "scripts", "*.ts"]
+  "include": ["src", "tests", "scripts", "seeds", "*.ts"]
 }
