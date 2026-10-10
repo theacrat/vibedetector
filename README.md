@@ -1,6 +1,6 @@
 # vibedetector
 
-The provider/model UUID rework is specified in `docs/catalogue-identities.md`. Providers and models have stable IDs separate from editable display names; provider slugs remain URL identifiers. `/admin` lists providers; each Edit link opens the provider's details and models together. A display-name edit does not alter reports or filter IDs. A slug edit explicitly changes the page URL. Existing catalogue documentation below is superseded where it describes immutable names or compile-time providers.
+Providers and models use stable D1 UUIDs. The supported server adapter registry owns provider membership and metadata. Official service APIs supply model identities. The design and API sources are in `docs/provider-model-sync.md`.
 
 Community reports for AI services, built for vibedetector.net. The supplied prototype defines the visual layout. Reports are not official status or evidence of a model change.
 
@@ -21,13 +21,11 @@ Reports contribute once per AI per fixed UTC hour. Category changes and undo app
 
 Model reporting is optional. The database catalogue supplies available models; `seeds/models.ts` preserves the initial list only. A model is metadata on the existing provider-level report, not a separate vote. Graph filters do not alter provider verdicts or baselines. Apply all local migrations after updating; model migrations preserve existing reports and expand provider support to Z.AI and Kimi. Production migrations still require approval.
 
-## Model administration
+## Catalogue administration
 
-Open `/admin` to add, archive/reactivate or reorder models. Move up/down controls save one order per provider. Archived models are hidden from public choices and named graph filters; stored reports still contribute to provider-wide activity until normal retention expires them. Names cannot be renamed or deleted. Set `ADMIN_KEY` as a Worker secret with at least 32 randomly generated characters, not a memorable password. Never put it in Wrangler vars or commit it. The panel is disabled if the secret or admin rate limiter is missing.
+Open `/admin` to view sync status and refresh API catalogues. Manual provider and model creation, editing, archival, and ordering are no longer supported. Archived models stay out of new choices and named graph filters; stored reports still contribute to provider-wide activity until normal retention expires them.
 
-Catalogues support up to 256 names per provider. New names append at the end; reorder controls persist immediately and affect both reporting and graph selectors.
-
-For local development, use an ignored `.dev.vars` file containing a test-only `ADMIN_KEY`. Production uses Wrangler's protected secret input. Key entry exchanges the key for a one-hour HttpOnly session; the panel never stores it in localStorage or URL parameters. Rotate the key to revoke existing sessions. The initial migration uses INSERT OR IGNORE; deployments do not reset your catalogue edits.
+Set `ADMIN_KEY` as a Worker secret with at least 32 random characters. Never put it in Wrangler vars or commit it. The panel is disabled if the secret or admin rate limiter is missing. For local development, use an ignored `.dev.vars` file containing a test-only key. Key entry exchanges the key for a one-hour HttpOnly session; the panel never stores it in localStorage or URL parameters. Rotate the key to revoke existing sessions.
 
 ## Gates
 

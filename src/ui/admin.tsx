@@ -41,10 +41,10 @@ function ModelAdmin({ screen = listScreen }: { screen?: AdminScreen }) {
       : undefined;
   let title = "Providers";
   if (screen.kind === "new") {
-    title = "Add provider";
+    title = "Providers";
   }
   if (screen.kind === "edit") {
-    title = provider ? `Edit ${provider.name}` : "Provider not found";
+    title = provider ? `${provider.name} catalogue` : "Provider not found";
   }
   useEffect(() => {
     if (authenticated) {

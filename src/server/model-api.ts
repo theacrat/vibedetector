@@ -35,6 +35,9 @@ function parseModel(
   if (adapter.protocol === "list" && row["object"] !== "model") {
     throw new Error("Invalid model response");
   }
+  if (adapter.protocol === "anthropic") {
+    text(row["display_name"], 128);
+  }
   if (adapter.protocol === "anthropic" && row["type"] !== "model") {
     throw new Error("Invalid model response");
   }
@@ -76,11 +79,15 @@ function nextPage(body: Record<string, unknown>, adapter: ModelAdapter): string 
   return "";
 }
 
-async function boundedBody(response: Response): Promise<string> {
+async function boundedBody(response: Response, signal: AbortSignal): Promise<string> {
   if (!response.body) {
     throw new Error("Invalid model response");
   }
   const reader = response.body.getReader();
+  const abort = () => {
+    void reader.cancel();
+  };
+  signal.addEventListener("abort", abort, { once: true });
   const chunks: Uint8Array[] = [];
   let size = 0;
   try {
@@ -102,8 +109,10 @@ async function boundedBody(response: Response): Promise<string> {
       chunks.push(value);
     }
   } finally {
+    signal.removeEventListener("abort", abort);
     await reader.cancel();
   }
+  signal.throwIfAborted();
   const bytes = new Uint8Array(size);
   let offset = 0;
   for (const chunk of chunks) {
@@ -166,7 +175,7 @@ async function fetchPage(
   if (!response.ok) {
     throw new Error(`Service returned HTTP ${response.status}`);
   }
-  const raw = await boundedBody(response);
+  const raw = await boundedBody(response, signal);
   return parsePage(record(JSON.parse(raw)), adapter);
 }
 

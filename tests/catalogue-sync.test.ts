@@ -186,7 +186,10 @@ test.each([false, true])(
       .run();
     await syncCatalogue(bindings, CLAUDE, async () => {
       await Promise.resolve();
-      return Response.json({ data: [{ id: "successor", type: "model" }], has_more: false });
+      return Response.json({
+        data: [{ display_name: "Successor", id: "successor", type: "model" }],
+        has_more: false,
+      });
     });
     const status = await db
       .prepare("SELECT * FROM catalogue_sync WHERE provider = ?")
@@ -196,7 +199,10 @@ test.each([false, true])(
     response.resolve(
       fails
         ? new Response("secret", { status: 500 })
-        : Response.json({ data: [{ id: "stale", type: "model" }], has_more: false }),
+        : Response.json({
+            data: [{ display_name: "Stale", id: "stale", type: "model" }],
+            has_more: false,
+          }),
     );
     await stalled;
     expect(await loadModels(db, CLAUDE)).toEqual(models);
