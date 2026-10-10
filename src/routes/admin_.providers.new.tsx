@@ -1,20 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
-
-import { ModelAdmin } from "@/ui/admin";
-
-const screen = { kind: "new" as const };
-function NewProvider() {
-  return <ModelAdmin screen={screen} />;
-}
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 const Route = createFileRoute("/admin_/providers/new")({
-  component: NewProvider,
-  head: () => ({
-    meta: [
-      { title: "Add provider - vibedetector" },
-      { content: "noindex, nofollow", name: "robots" },
-    ],
-  }),
+  beforeLoad: () => {
+    // TanStack uses a thrown redirect response to stop loading the retired creation route.
+    // oxlint-disable-next-line typescript/only-throw-error
+    throw redirect({ to: "/admin" });
+  },
 });
 
 export { Route };

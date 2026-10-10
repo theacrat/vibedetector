@@ -2,7 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 
-import { loadModels } from "@/server/catalogue";
+import { loadModels, loadProviders, resolveProvider } from "@/server/catalogue";
 import { applyCatalogue, syncCatalogue } from "@/server/catalogue-sync";
 import { saveReport, sessionReport } from "@/server/storage";
 
@@ -45,8 +45,7 @@ async function database() {
     "0003_model_catalogue.sql",
     "0004_catalogue_identities.sql",
   ]) {
-    // Schema versions must be applied in order.
-    // oxlint-disable-next-line eslint/no-await-in-loop
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Migrations depend on preceding schema versions.
     await migrate(db, filename);
   }
   return db;
@@ -65,8 +64,7 @@ test("populated sync migration preserves report fields, UUIDs and foreign keys",
   const db = await database();
   const models = await loadModels(db);
   for (const model of models) {
-    // Each provider's report is persisted before migrating.
-    // oxlint-disable-next-line eslint/no-await-in-loop
+    // oxlint-disable-next-line eslint/no-await-in-loop -- D1 writes run sequentially before the schema migration.
     await saveReport(db, model.provider, model.id, "slow", 1_800_000, model.id);
   }
   const reports = await db.prepare("SELECT * FROM reports ORDER BY provider, identity_hash").all();
@@ -234,4 +232,61 @@ test("concurrent refresh and missing keys record one shared attempt", async () =
   expect(status?.attemptedAt).toBeGreaterThan(0);
   expect(status?.succeededAt).toBe(0);
   expect(status?.status).toBe("API key not configured");
+});
+
+test("malformed continuation preserves catalogue and last success", async () => {
+  const db = await database();
+  await migrate(db, "0005_catalogue_sync.sql");
+  const bindings = { DB: db, OPENAI_API_KEY: "secret" };
+  await syncCatalogue(bindings, CHATGPT, async () => {
+    await Promise.resolve();
+    return Response.json({ data: [{ id: "first", object: "model" }] });
+  });
+  const models = await loadModels(db, CHATGPT);
+  const before = await db
+    .prepare("SELECT succeeded_at, model_count FROM catalogue_sync WHERE provider = ?")
+    .bind(CHATGPT)
+    .first();
+  await db
+    .prepare("UPDATE catalogue_sync SET attempted_at = 0 WHERE provider = ?")
+    .bind(CHATGPT)
+    .run();
+  await syncCatalogue(bindings, CHATGPT, async () => {
+    await Promise.resolve();
+    return Response.json({ data: [{ id: "second", object: "model" }], has_more: "true" });
+  });
+  const after = await db
+    .prepare("SELECT succeeded_at, model_count FROM catalogue_sync WHERE provider = ?")
+    .bind(CHATGPT)
+    .first();
+  expect(await loadModels(db, CHATGPT)).toEqual(models);
+  expect(JSON.stringify(after)).toBe(JSON.stringify(before));
+});
+
+test("registry identity restores edited slug and retires unsupported manual providers", async () => {
+  const db = await database();
+  await db
+    .prepare(
+      "UPDATE providers SET slug = 'edited-cursor', name = 'Edited' WHERE id = '10000000-0000-4000-8000-000000000008'",
+    )
+    .run();
+  const custom = crypto.randomUUID();
+  await db
+    .prepare(
+      "INSERT INTO providers (id, slug, name, maker, status, statusLabel, logo, active, position) VALUES (?, 'manual', 'Manual', 'Manual', 'https://example.com', 'Website', '', 1, 20)",
+    )
+    .bind(custom)
+    .run();
+  await saveReport(db, custom, "owner", "slow", Date.now());
+  await migrate(db, "0005_catalogue_sync.sql");
+  const cursor = await resolveProvider(db, "cursor");
+  expect(cursor.slug).toBe("cursor");
+  expect(cursor.name).toBe("Cursor");
+  expect(await loadModels(db, cursor.id, true)).toEqual([]);
+  const providers = await loadProviders(db, true);
+  expect(providers.some((provider) => provider.id === custom)).toBe(false);
+  const history = await sessionReport(db, custom, "owner", Date.now());
+  expect(history.category).toBe("slow");
+  const foreignKeys = await db.prepare("PRAGMA foreign_key_check").all();
+  expect(foreignKeys.results).toEqual([]);
 });

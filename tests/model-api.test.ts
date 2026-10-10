@@ -88,6 +88,10 @@ describe("official model APIs", () => {
     { data: [{ id: " invalid ", object: "model" }] },
     { data: [{ id: "valid", object: "model" }], nextCursor: "more" },
     { data: [{ id: "valid", object: "model" }], has_more: true },
+    { data: [{ id: "valid", object: "model" }], has_more: "true" },
+    { data: [{ id: "valid", object: "model" }], has_more: 0 },
+    { data: [{ id: "valid", object: "model" }], nextCursor: false },
+    { data: [{ id: "valid", object: "model" }], next_page: {} },
     { data: [{ id: "valid" }] },
   ])("rejects unsafe unpaginated results %j", async (body) => {
     await expect(

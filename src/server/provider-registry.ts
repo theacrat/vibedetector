@@ -1,3 +1,4 @@
+import { catalogueScope } from "@/catalogue-scope";
 import type { Provider } from "@/domain";
 import { initialProviders } from "@/server/registered-providers";
 
@@ -66,13 +67,7 @@ const providerRegistry: RegisteredProvider[] = initialProviders
   .map((provider) => ({
     adapter: adapters[provider.slug],
     provider,
-    scope:
-      (
-        {
-          cursor: "Cloud Agent models",
-          zai: "Provider reporting only. No supported model listing API.",
-        } as Record<string, string>
-      )[provider.slug] ?? "Official API-discovered models available to the configured account",
+    scope: catalogueScope(provider.id),
   }));
 
 export { providerRegistry };

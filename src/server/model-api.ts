@@ -68,11 +68,8 @@ function nextPage(body: Record<string, unknown>, adapter: ModelAdapter): string 
     return "nextPageToken" in body ? text(body["nextPageToken"], 4096) : "";
   }
   if (
-    body["has_more"] === true ||
-    body["nextCursor"] ||
-    body["nextPageToken"] ||
-    body["next"] ||
-    body["next_page"]
+    ("has_more" in body && body["has_more"] !== false) ||
+    ["nextCursor", "nextPageToken", "next", "next_page"].some((field) => field in body)
   ) {
     throw new Error("Unsupported pagination");
   }
