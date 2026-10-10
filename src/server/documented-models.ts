@@ -12,7 +12,23 @@ const geminiTasks = new Map<string, string>([
   ["gemini-omni-flash-preview", "video-generation"],
 ]);
 
-const geminiLifecycle = new Map<string, { task: string; source: string }>([
+const geminiLifecycle = new Map<string, { task: string; source: string; announcedAt?: string }>([
+  [
+    "gemini-3.1-flash-image",
+    {
+      announcedAt: "2026-10-06",
+      source: "https://ai.google.dev/gemini-api/docs/changelog",
+      task: "deprecated",
+    },
+  ],
+  [
+    "gemini-omni-flash-preview",
+    {
+      announcedAt: "2026-08-27",
+      source: "https://ai.google.dev/gemini-api/docs/changelog",
+      task: "deprecated",
+    },
+  ],
   [
     "gemini-3.1-flash-lite-preview",
     { source: "https://ai.google.dev/gemini-api/docs/deprecations", task: "shutdown" },
@@ -81,14 +97,27 @@ function documentedGeminiRelease(id: string): { releasedAt: number; source: stri
     : undefined;
 }
 
-function documentedGeminiTask(id: string): { task: string; source: string } | undefined {
+function documentedGeminiTask(id: string):
+  | {
+      task: string;
+      source: string;
+      announcedAt?: string;
+      capabilityTask?: string;
+      checkedAt: string;
+    }
+  | undefined {
   const exactId = id.replace(/^models\//u, "");
   const lifecycle = geminiLifecycle.get(exactId);
   if (lifecycle) {
-    return lifecycle;
+    const capabilityTask = geminiTasks.get(exactId);
+    return {
+      ...lifecycle,
+      ...(capabilityTask ? { capabilityTask } : {}),
+      checkedAt: "2026-10-11",
+    };
   }
   const task = geminiTasks.get(exactId);
-  return task ? { source: GEMINI_SOURCE, task } : undefined;
+  return task ? { checkedAt: "2026-10-11", source: GEMINI_SOURCE, task } : undefined;
 }
 
 export { documentedGeminiRelease, documentedGeminiTask };

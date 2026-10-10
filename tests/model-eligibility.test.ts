@@ -91,7 +91,7 @@ test("Gemini documented speech excludes without guessing from unknown IDs", asyn
   ]);
 });
 
-test("Gemini image and text output stays eligible", async () => {
+test("latest explicit Gemini lifecycle announcement overrides stable catalogue labels", async () => {
   const result = await catalogue("gemini", [
     {
       name: "models/gemini-3.1-flash-image",
@@ -99,7 +99,35 @@ test("Gemini image and text output stays eligible", async () => {
       supportedGenerationMethods: ["generateContent"],
     },
   ]);
+  expect(result[0]?.metadata?.reasons).toEqual(["deprecated"]);
+  expect(result[0]?.metadata?.evidence["documentedTask"]).toMatchObject({
+    announcedAt: "2026-10-06",
+    checkedAt: "2026-10-11",
+    source: "https://ai.google.dev/gemini-api/docs/changelog",
+  });
+});
+
+test("stable Gemini image and text output remains eligible without a lifecycle announcement", async () => {
+  const result = await catalogue("gemini", [
+    {
+      name: "models/gemini-3-pro-image",
+      outputModalities: ["image", "text"],
+      supportedGenerationMethods: ["generateContent"],
+    },
+  ]);
   expect(result[0]?.metadata?.reasons).toEqual([]);
+});
+
+test("Gemini Omni preview preserves video capability and explicit deprecation evidence", async () => {
+  const result = await catalogue("gemini", [
+    { name: "models/gemini-omni-flash-preview", supportedGenerationMethods: ["generateContent"] },
+  ]);
+  expect(result[0]?.metadata?.reasons).toEqual(["deprecated"]);
+  expect(result[0]?.metadata?.evidence["documentedTask"]).toMatchObject({
+    capabilityTask: "video-generation",
+    source: "https://ai.google.dev/gemini-api/docs/changelog",
+    task: "deprecated",
+  });
 });
 
 test("Mistral owner is the operator and canonical relationships remain explicit", async () => {
