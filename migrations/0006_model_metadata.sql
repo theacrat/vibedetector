@@ -4,7 +4,8 @@ CREATE TABLE model_metadata (
   metadata_json TEXT,
   source_url TEXT,
   checked_at INTEGER NOT NULL DEFAULT 0,
-  status TEXT NOT NULL CHECK (status IN ('ok', 'unknown', 'failed')),
+  discovered_at INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('ok', 'unknown')),
   PRIMARY KEY (provider, external_id)
 ) WITHOUT ROWID;
 CREATE TABLE openai_document_cache (

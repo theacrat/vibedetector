@@ -25,6 +25,7 @@ interface EnrichmentContext {
   now: number;
   request: CatalogueFetch;
   signal: AbortSignal;
+  discoveredAt: number;
 }
 
 async function persistDocument(context: EnrichmentContext, url: string, markdown?: string) {
@@ -43,7 +44,7 @@ function pageSignal(signal: AbortSignal): AbortSignal {
 }
 
 async function indexUrls(context: EnrichmentContext, index?: CachedDocument): Promise<string[]> {
-  if (index && context.now - index.checked_at < WEEK) {
+  if (index && index.checked_at >= context.discoveredAt && context.now - index.checked_at < WEEK) {
     // oxlint-disable-next-line eslint/no-use-before-define -- Parser is the source boundary used by the cache helper.
     return index.document_json ? parseIndex(index.document_json) : [];
   }
@@ -112,7 +113,7 @@ function metadataWrite(
   }
   return context.db
     .prepare(
-      `INSERT INTO model_metadata (provider, external_id, metadata_json, source_url, checked_at, status) SELECT ?, ?, ?, ?, ?, ? WHERE ${FENCE} ON CONFLICT(provider, external_id) DO UPDATE SET metadata_json = COALESCE(excluded.metadata_json, model_metadata.metadata_json), source_url = COALESCE(excluded.source_url, model_metadata.source_url), checked_at = CASE WHEN excluded.metadata_json IS NULL AND model_metadata.metadata_json IS NOT NULL THEN model_metadata.checked_at ELSE excluded.checked_at END, status = CASE WHEN excluded.metadata_json IS NULL AND model_metadata.metadata_json IS NOT NULL THEN model_metadata.status ELSE excluded.status END`,
+      `INSERT INTO model_metadata (provider, external_id, metadata_json, source_url, checked_at, status, discovered_at) SELECT ?, ?, ?, ?, ?, ?, ? WHERE ${FENCE} ON CONFLICT(provider, external_id) DO UPDATE SET metadata_json = COALESCE(excluded.metadata_json, model_metadata.metadata_json), source_url = COALESCE(excluded.source_url, model_metadata.source_url), checked_at = CASE WHEN excluded.metadata_json IS NULL AND model_metadata.metadata_json IS NOT NULL THEN model_metadata.checked_at ELSE excluded.checked_at END, status = CASE WHEN excluded.metadata_json IS NULL AND model_metadata.metadata_json IS NOT NULL THEN model_metadata.status ELSE excluded.status END`,
     )
     .bind(
       context.provider,
@@ -123,6 +124,7 @@ function metadataWrite(
       match?.[0] ?? null,
       checkedAt,
       match ? "ok" : "unknown",
+      context.discoveredAt,
       context.provider,
       context.lease,
     );
@@ -226,7 +228,12 @@ async function resolveMetadata(context: EnrichmentContext, due: string[]) {
     due.map((id) => `${ORIGIN}/api/docs/models/${encodeURIComponent(id)}.md`),
   );
   const pages = urls
-    .filter((url) => !cached.has(url) || now - (cached.get(url)?.checked_at ?? 0) >= WEEK)
+    .filter(
+      (url) =>
+        !cached.has(url) ||
+        (cached.get(url)?.checked_at ?? 0) < context.discoveredAt ||
+        now - (cached.get(url)?.checked_at ?? 0) >= WEEK,
+    )
     .toSorted(
       (left, right) =>
         Number(exactUrls.has(right)) - Number(exactUrls.has(left)) ||
@@ -240,10 +247,13 @@ async function resolveMetadata(context: EnrichmentContext, due: string[]) {
       documents.set(url, parseDocument(markdown));
     }
   }
-  const { attempted, refreshed } = await refreshDocuments(context, pages, documents);
+  const { refreshed } = await refreshDocuments(context, pages, documents);
   const complete = urls.every(
     (url) =>
-      attempted.has(url) || (cached.has(url) && now - (cached.get(url)?.checked_at ?? 0) < WEEK),
+      refreshed.has(url) ||
+      (cached.has(url) &&
+        (cached.get(url)?.succeeded_at ?? 0) >= context.discoveredAt &&
+        now - (cached.get(url)?.succeeded_at ?? 0) < WEEK),
   );
   const writes = due.map((id) =>
     metadataWrite(context, id, documents, cached, refreshed, complete),
@@ -261,23 +271,41 @@ async function enrichOpenAIModels(
   now = Date.now(),
   request: CatalogueFetch = fetch,
 ): Promise<void> {
+  const existing = await db
+    .prepare(
+      "SELECT external_id, checked_at, discovered_at, status FROM model_metadata WHERE provider = ?",
+    )
+    .bind(provider)
+    .all<{ external_id: string; checked_at: number; discovered_at: number; status: string }>();
+  const checks = new Map(existing.results.map((row) => [row.external_id, row]));
+  const newIds = ids.filter((id) => !checks.has(id));
+  if (newIds.length > 0) {
+    await db
+      .prepare(
+        `INSERT INTO model_metadata (provider, external_id, discovered_at, status) SELECT ?, value, ?, 'unknown' FROM json_each(?) WHERE ${FENCE} ON CONFLICT(provider, external_id) DO NOTHING`,
+      )
+      .bind(provider, now, JSON.stringify(newIds), provider, lease)
+      .run();
+  }
+  const due = ids.filter(
+    (id) =>
+      !checks.has(id) ||
+      checks.get(id)?.status === "unknown" ||
+      now - (checks.get(id)?.checked_at ?? 0) >= WEEK,
+  );
+  if (due.length === 0) {
+    return;
+  }
+  const discoveredAt = Math.max(...due.map((id) => checks.get(id)?.discovered_at ?? now));
   const context: EnrichmentContext = {
     db,
+    discoveredAt,
     lease,
     now,
     provider,
     request,
     signal: AbortSignal.timeout(35_000),
   };
-  const existing = await db
-    .prepare("SELECT external_id, checked_at FROM model_metadata WHERE provider = ?")
-    .bind(provider)
-    .all<{ external_id: string; checked_at: number }>();
-  const checks = new Map(existing.results.map((row) => [row.external_id, row.checked_at]));
-  const due = ids.filter((id) => !checks.has(id) || now - (checks.get(id) ?? 0) >= WEEK);
-  if (due.length === 0) {
-    return;
-  }
   await resolveMetadata(context, due);
 }
 

@@ -14,7 +14,9 @@ The index provides explicit model-page links. A model ID is accepted only when i
 
 An ID that has no exact documented match remains in the catalogue with `status = 'unknown'`. A failed fetch leaves the previous JSON and successful timestamp intact.
 
-The metadata table is independent of models and reports. Its key is `(provider, external_id)`. The page cache stores positive and negative results independently so unsupported models do not cause daily per-model requests. An incomplete page-cache bootstrap leaves unmatched IDs eligible for resolution on the next sync.
+The metadata table is independent of models and reports. Its key is `(provider, external_id)`. The page cache stores positive and negative results independently so unsupported models do not cause daily per-model requests. An incomplete page-cache bootstrap leaves unmatched IDs eligible for resolution on the next sync. Each ID has a persisted discovery timestamp. A new ID refreshes the official index and bounded pages older than its discovery, including negative pages. Snapshot resolution still requires explicit membership, not a parent-name guess. Only complete, successfully fetched evidence can start a seven-day negative window.
+
+Model status describes resolution, either `ok` or `unknown`. Fetch failures belong to the page cache's checked and successful timestamps, not a third model status that would discard a previous successful resolution.
 
 ## Bulk-source investigation
 
@@ -28,7 +30,7 @@ These sources were fetched on 11 October 2026. No safe one-request bulk metadata
 
 Catalogue listing keeps its existing daily behaviour. Enrichment runs for new or missing IDs and for metadata older than seven days. A cached index supplies explicit page links, and a cached page supplies exact snapshot membership. An index refresh and at most 20 model-page requests run per catalogue sync, with a maximum of four page requests in flight. Each request has a 15 second deadline, follows no redirects, and streams at most 512 KiB. The whole enrichment pass has a 35 second deadline. The worst-case bootstrap uses 21 extra HTTP requests, not one.
 
-The 20-page limit spreads an initial catalogue across several daily syncs. Exact ID pages take priority. Snapshot-only IDs resolve when their documented parent page enters the cache. Successful and failed page checks are cached for seven days. A new model can resolve immediately from cached explicit membership without an HTTP request.
+The 20-page limit spreads an initial catalogue across several daily syncs. Exact ID pages take priority. Snapshot-only IDs resolve when their documented parent page enters the cache. Successful and failed page checks are cached for seven days. A new model forces bounded discovery against the official index and pages older than its detection, even when weekly caches have not expired.
 
 Enrichment uses the catalogue sync lease as its fence. A stale worker cannot write metadata after the lease expires or changes. Enrichment failure never archives models and never replaces the successful catalogue sync.
 
