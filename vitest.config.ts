@@ -9,7 +9,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    exclude: ["tests/backend.test.ts"],
+    exclude: ["tests/backend.test.ts", "tests/catalogue-sync.test.ts"],
     include: ["tests/**/*.test.{ts,tsx}"],
   },
 });

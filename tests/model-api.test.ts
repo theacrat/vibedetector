@@ -126,4 +126,72 @@ describe("official model APIs", () => {
       }),
     ).rejects.toThrow();
   });
+
+  test("duplicate filtered IDs and repeated pagination tokens fail closed", async () => {
+    await expect(
+      listServiceModels(adapter("gemini"), "secret", async () => {
+        await Promise.resolve();
+        return Response.json({
+          models: [
+            { name: "models/embed", supportedGenerationMethods: ["embedContent"] },
+            { name: "models/embed", supportedGenerationMethods: ["embedContent"] },
+          ],
+        });
+      }),
+    ).rejects.toThrow("Duplicate model ID");
+    let calls = 0;
+    await expect(
+      listServiceModels(adapter("gemini"), "secret", async () => {
+        await Promise.resolve();
+        calls += 1;
+        return Response.json({
+          models: [
+            { name: `models/gemini-${calls}`, supportedGenerationMethods: ["generateContent"] },
+          ],
+          nextPageToken: "repeat",
+        });
+      }),
+    ).rejects.toThrow("Invalid pagination");
+    expect(calls).toBe(2);
+  });
+
+  test("pagination and model count limits reject rather than truncate", async () => {
+    let page = 0;
+    await expect(
+      listServiceModels(adapter("gemini"), "secret", async () => {
+        await Promise.resolve();
+        page += 1;
+        return Response.json({
+          models: [
+            { name: `models/gemini-${page}`, supportedGenerationMethods: ["generateContent"] },
+          ],
+          nextPageToken: String(page),
+        });
+      }),
+    ).rejects.toThrow("Too many model pages");
+    expect(page).toBe(100);
+    await expect(
+      listServiceModels(adapter("chatgpt"), "secret", async () => {
+        await Promise.resolve();
+        return Response.json({
+          data: Array.from({ length: 5001 }, (_value, index) => ({
+            id: `model-${index}`,
+            object: "model",
+          })),
+        });
+      }),
+    ).rejects.toThrow("Too many models");
+  });
+
+  test.each([{}, { has_more: "true" }, { has_more: true, last_id: "wrong" }])(
+    "Anthropic invalid pagination metadata rejects %j",
+    async (metadata) => {
+      await expect(
+        listServiceModels(adapter("claude"), "secret", async () => {
+          await Promise.resolve();
+          return Response.json({ data: [{ id: "first", type: "model" }], ...metadata });
+        }),
+      ).rejects.toThrow("Invalid pagination");
+    },
+  );
 });

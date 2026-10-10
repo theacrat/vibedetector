@@ -165,3 +165,67 @@ test("one provider failure preserves its catalogue while another syncs and coold
   });
   expect(calls).toBe(2);
 });
+
+test.each([false, true])(
+  "stalled sync owner cannot change successor state after success or failure (%s)",
+  async (fails) => {
+    const db = await database();
+    await migrate(db, "0005_catalogue_sync.sql");
+    const bindings = { ANTHROPIC_API_KEY: "secret", DB: db };
+    const started = Promise.withResolvers<boolean>();
+    const response = Promise.withResolvers<Response>();
+    const stalled = syncCatalogue(bindings, CLAUDE, async () => {
+      started.resolve(true);
+      const result = await response.promise;
+      return result;
+    });
+    await started.promise;
+    await db
+      .prepare("UPDATE catalogue_sync SET lease_until = 0, attempted_at = 0 WHERE provider = ?")
+      .bind(CLAUDE)
+      .run();
+    await syncCatalogue(bindings, CLAUDE, async () => {
+      await Promise.resolve();
+      return Response.json({ data: [{ id: "successor", type: "model" }], has_more: false });
+    });
+    const status = await db
+      .prepare("SELECT * FROM catalogue_sync WHERE provider = ?")
+      .bind(CLAUDE)
+      .first();
+    const models = await loadModels(db, CLAUDE);
+    response.resolve(
+      fails
+        ? new Response("secret", { status: 500 })
+        : Response.json({ data: [{ id: "stale", type: "model" }], has_more: false }),
+    );
+    await stalled;
+    expect(await loadModels(db, CLAUDE)).toEqual(models);
+    const finalStatus = await db
+      .prepare("SELECT * FROM catalogue_sync WHERE provider = ?")
+      .bind(CLAUDE)
+      .first();
+    expect(JSON.stringify(finalStatus)).toBe(JSON.stringify(status));
+  },
+);
+
+test("concurrent refresh and missing keys record one shared attempt", async () => {
+  const db = await database();
+  await migrate(db, "0005_catalogue_sync.sql");
+  let calls = 0;
+  const bindings = { DB: db, OPENAI_API_KEY: "secret" };
+  await Promise.all(
+    [1, 2, 3].map(async () =>
+      syncCatalogue(bindings, CHATGPT, async () => {
+        await Promise.resolve();
+        calls += 1;
+        return Response.json({ data: [{ id: "api", object: "model" }], object: "list" });
+      }),
+    ),
+  );
+  expect(calls).toBe(1);
+  const statuses = await syncCatalogue({ DB: db }, CLAUDE);
+  const status = statuses.find((entry) => entry.provider === CLAUDE);
+  expect(status?.attemptedAt).toBeGreaterThan(0);
+  expect(status?.succeededAt).toBe(0);
+  expect(status?.status).toBe("API key not configured");
+});
