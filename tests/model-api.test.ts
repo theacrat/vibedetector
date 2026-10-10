@@ -26,6 +26,26 @@ describe("official model APIs", () => {
     expect(result).toEqual([{ id: "composer-2", name: "Composer 2 (composer-2)" }]);
   });
 
+  test("Z.AI discovers API Platform model IDs through its OpenAI-compatible list", async () => {
+    const result = await listServiceModels(adapter("zai"), "secret", async (url, init) => {
+      await Promise.resolve();
+      expect(url).toBe("https://api.z.ai/api/paas/v4/models");
+      expect(new Headers(init.headers).get("Authorization")).toBe("Bearer secret");
+      expect(init.redirect).toBe("error");
+      return Response.json({
+        data: [
+          { id: "glm-5.3", object: "model", owned_by: "zai" },
+          { id: "glm-5.3-flash", object: "model", owned_by: "zai" },
+        ],
+        object: "list",
+      });
+    });
+    expect(result).toEqual([
+      { id: "glm-5.3", name: "glm-5.3" },
+      { id: "glm-5.3-flash", name: "glm-5.3-flash" },
+    ]);
+  });
+
   test("Anthropic walks all pages and checks advancing last_id", async () => {
     const urls: string[] = [];
     const result = await listServiceModels(adapter("claude"), "secret", async (url, init) => {

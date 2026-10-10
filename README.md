@@ -58,10 +58,18 @@ Architecture and delivery decisions are in `docs/architecture.md`. Live rows exp
 
 The catalogue sync runs daily at 03:43 UTC and can be refreshed from the authenticated admin panel. It uses official server APIs with Worker-only secrets. Configure the provider keys in local development or as secret bindings in production. The sync lists models available to the configured account, not every consumer product label.
 
-Required secret bindings are `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `CURSOR_API_KEY`, and `MOONSHOT_API_KEY`. Each is optional independently. Missing keys show an unconfigured status and keep that provider's previous catalogue. Use API Platform credentials, not consumer subscriptions or Kimi Code keys. Cursor accepts a user Cloud Agents key or a service account key. Never prefix these secrets with `VITE_` or put them in Wrangler `vars`.
+Required secret bindings are `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `CURSOR_API_KEY`, `MOONSHOT_API_KEY`, and `ZAI_API_KEY`. Each is optional independently. Missing keys show an unconfigured status and keep that provider's previous catalogue. Use API Platform credentials, not consumer subscriptions or Kimi Code keys. Cursor accepts a user Cloud Agents key or a service account key. Never prefix these secrets with `VITE_` or put them in Wrangler `vars`.
 
-Apply migration `0005_catalogue_sync.sql` through the normal approved deployment process before running the new Worker. This task does not deploy or apply production migrations. The migration preserves UUIDs and report fields while archiving Copilot, old Cursor and Z.AI choices, and unsupported manually created providers. Provider metadata and membership are code-owned by the supported adapter registry.
+Apply migrations `0005_catalogue_sync.sql` and `0006_model_metadata.sql` through the normal approved deployment process before running the new Worker. This task does not deploy or apply production migrations. Migration `0005` preserves UUIDs and report fields while archiving Copilot, old Cursor and Z.AI choices, and unsupported manually created providers. Migration `0006` adds the enrichment and documentation cache tables. Provider metadata and membership are code-owned by the supported adapter registry.
 
 Refreshes share a 60-second per-provider cooldown with the scheduled job. A 120-second lease fences overlapping runs. Model fetching has a 60-second deadline, a 100-page limit, a 5,000-model limit, and a 2 MB streamed limit per page. Invalid, empty, partial, duplicate, or failed results keep the previous catalogue. Successful complete results archive missing models. Changes to credentials, account access, or API region can therefore archive previously visible models. API IDs are not inferred from old consumer labels. Historical manual UUIDs remain archived instead of being reassigned.
 
-Cursor uses its official Cloud Agent model list. Z.AI remains provider-level reporting only because its official API documentation does not expose a model listing endpoint. Copilot is retired without deleting its providers, models, or reports. A failed or incomplete sync keeps the prior catalogue.
+Cursor uses its official Cloud Agent model list. Z.AI uses its OpenAI-compatible API Platform model list. Copilot is retired without deleting its providers, models, or reports. A failed or incomplete sync keeps the prior catalogue.
+
+Inspect configured endpoints without changing the database:
+
+```sh
+bun --env-file=.dev.vars scripts/probe-model-apis.ts /tmp/opencode/provider-models.json
+```
+
+The JSON inventory records per-provider status, endpoints, validated choices, and allowlisted model metadata from every response page. It does not record credentials, request headers, or upstream error bodies. Keep the account-specific output local; use it to decide model filters before changing sync selection rules.

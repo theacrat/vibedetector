@@ -1,5 +1,6 @@
 import { listServiceModels } from "./model-api";
 import type { CatalogueFetch, ExternalModel } from "./model-api";
+import { enrichOpenAIModels } from "./openai-enrichment";
 import { providerRegistry } from "./provider-registry";
 import type { ModelSecret, RegisteredProvider } from "./provider-registry";
 import { ApiError } from "./security";
@@ -118,6 +119,8 @@ async function syncProvider(
       throw new Error("API key not configured");
     }
     const models = await listServiceModels(adapter, key, request);
+    // oxlint-disable-next-line eslint/no-use-before-define -- The optional documentation step is isolated from catalogue failure handling.
+    await enrichCatalogue(bindings.DB, entry, lease, models, request);
     await applyCatalogue(bindings.DB, provider.id, lease, models);
   } catch (error) {
     const known =
@@ -132,6 +135,30 @@ async function syncProvider(
     )
       .bind(status, provider.id, lease)
       .run();
+  }
+}
+
+async function enrichCatalogue(
+  db: D1Database,
+  entry: RegisteredProvider,
+  lease: string,
+  models: ExternalModel[],
+  request: CatalogueFetch,
+) {
+  if (entry.adapter?.secret !== "OPENAI_API_KEY") {
+    return;
+  }
+  try {
+    await enrichOpenAIModels(
+      db,
+      entry.provider.id,
+      lease,
+      models.map((model) => model.id),
+      Date.now(),
+      request,
+    );
+  } catch {
+    // Documentation availability must not change the account's catalogue.
   }
 }
 
