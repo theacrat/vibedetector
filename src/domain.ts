@@ -63,6 +63,7 @@ function isCategory(value: unknown): value is Category {
   return categories.some((category) => category === value);
 }
 export { categories, ranges, isId, isRange, isCategory };
+export { catalogueScope } from "./catalogue-scope";
 export type {
   Category,
   Provider,

@@ -6,8 +6,7 @@ import { parseCatalogue, parseProviders } from "./catalogue-data";
 import { requestJson, RequestError } from "./data";
 
 // oxlint-disable-next-line eslint/max-lines-per-function
-function useAdmin(savedProvider?: Provider) {
-  const handoff = useRef(savedProvider);
+function useAdmin() {
   const [models, setModels] = useState<ModelOption[]>();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [pending, setPending] = useState(true);
@@ -82,22 +81,14 @@ function useAdmin(savedProvider?: Provider) {
   );
   useEffect(() => {
     async function initialize() {
-      const initialProvider = handoff.current;
       try {
         await read();
       } catch (error) {
         if (error instanceof RequestError && error.status === 401) {
           setModels(undefined);
-        } else if (initialProvider) {
-          setProviders([initialProvider]);
-          setModels([]);
         }
         const message = error instanceof Error ? error.message : "Could not load the catalogue.";
-        setAdminError(
-          initialProvider && !(error instanceof RequestError && error.status === 401)
-            ? "Provider saved but catalogue refresh failed."
-            : message,
-        );
+        setAdminError(message);
       }
       setPending(false);
     }

@@ -48,10 +48,6 @@ form.admin-panel {
   margin-top: 24px;
   color: var(--muted);
 }
-.admin-help {
-  color: var(--muted);
-  font-size: 14px;
-}
 .admin-heading {
   display: flex;
   align-items: center;
@@ -62,17 +58,6 @@ form.admin-panel {
 .admin-heading h2 {
   margin: 0;
 }
-.admin-models {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-.admin-models li {
-  display: grid;
-  gap: 10px;
-  padding: 14px 0;
-  border-top: 1px solid var(--line);
-}
 .admin-providers {
   list-style: none;
   padding: 0;
@@ -80,81 +65,6 @@ form.admin-panel {
 .admin-providers li {
   padding-block: 20px;
   border-top: 1px solid var(--line);
-}
-.admin-add-model {
-  margin-block: 16px 8px;
-}
-.admin-add-model-fields {
-  display: flex;
-  gap: 8px;
-}
-.admin-add-model-fields input {
-  min-width: 0;
-}
-.admin-add-model-fields button {
-  flex-shrink: 0;
-}
-.admin-panel form.admin-model-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.admin-model-row > input,
-.admin-model-name {
-  flex: 1;
-  min-width: 0;
-}
-.admin-model-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.admin-model-row.archived .admin-model-name {
-  color: var(--muted);
-  text-decoration: line-through;
-}
-.admin-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--paper);
-}
-.admin-icon:hover:not(:disabled) {
-  background: var(--ink);
-}
-.admin-provider-form {
-  margin-block: 16px;
-}
-.admin-provider-form label {
-  display: block;
-  margin-bottom: 8px;
-}
-.admin-model-actions {
-  display: flex;
-  flex-shrink: 0;
-  gap: 0;
-}
-.admin-provider-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 12px;
-}
-.admin-provider-summary span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.admin-provider-summary small {
-  display: block;
-  margin-top: 6px;
-  color: var(--muted);
 }
 .admin a.plain-button {
   display: inline-flex;

@@ -12,7 +12,7 @@
     "format:check": "oxfmt --check",
     "lint": "oxlint --max-warnings=0",
     "preview": "vite preview --host 127.0.0.1 --port 41873",
-    "test": "vitest run && bun test tests/backend.test.ts",
+    "test": "vitest run && bun test tests/backend.test.ts tests/catalogue-sync.test.ts",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
     "typegen": "wrangler types src/generated/worker.d.ts"

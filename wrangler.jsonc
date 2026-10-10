@@ -31,5 +31,5 @@
     "TURNSTILE_SITE_KEY": "0x4AAAAAAFROSyaakxb3TQIa",
     "TURNSTILE_HOSTNAME": "vibedetector.net",
   },
-  "triggers": { "crons": ["17 * * * *"] },
+  "triggers": { "crons": ["17 * * * *", "43 3 * * *"] },
 }
