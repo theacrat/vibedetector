@@ -34,8 +34,8 @@ describe("official model APIs", () => {
       expect(new Headers(init.headers).get("x-api-key")).toBe("secret");
       return Response.json(
         urls.length === 1
-          ? { data: [{ id: "first", object: "model" }], has_more: true, last_id: "first" }
-          : { data: [{ id: "last", object: "model" }], has_more: false, last_id: "last" },
+          ? { data: [{ id: "first", type: "model" }], has_more: true, last_id: "first" }
+          : { data: [{ id: "last", type: "model" }], has_more: false, last_id: "last" },
       );
     });
     expect(result).toEqual([
@@ -98,7 +98,7 @@ describe("official model APIs", () => {
         calls += 1;
         return calls === 1
           ? Response.json({
-              data: [{ id: "first", object: "model" }],
+              data: [{ id: "first", type: "model" }],
               has_more: true,
               last_id: "first",
             })

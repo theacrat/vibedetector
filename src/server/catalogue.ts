@@ -94,6 +94,10 @@ function readProvider(row: unknown): Provider {
   ) {
     throw new Error("Invalid stored provider");
   }
+  const registered = providerRegistry.find((entry) => entry.provider.id === row.id);
+  if (registered) {
+    return { ...registered.provider, active: row.active === 1 };
+  }
   return { ...parseProvider(row), active: row.active === 1, id: row.id };
 }
 
@@ -138,11 +142,13 @@ async function resolveProvider(
   slugOrId: string,
   activeOnly = true,
 ): Promise<Provider> {
+  const registered = providerRegistry.find((entry) => entry.provider.slug === slugOrId);
+  const lookup = registered?.provider.id ?? slugOrId;
   const row = await db
     .prepare(
-      `SELECT * FROM providers WHERE ${isId(slugOrId) ? "id" : "slug"} = ? ${activeOnly ? "AND active = 1" : ""}`,
+      `SELECT * FROM providers WHERE ${isId(lookup) ? "id" : "slug"} = ? ${activeOnly ? "AND active = 1" : ""}`,
     )
-    .bind(slugOrId)
+    .bind(lookup)
     .first<unknown>();
   if (!row) {
     throw new ApiError(404, "Unknown provider");

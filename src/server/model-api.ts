@@ -26,12 +26,19 @@ function text(value: unknown, max = 512): string {
   return value;
 }
 
-function parseModel(value: unknown, adapter: ModelAdapter): ExternalModel | undefined {
+function parseModel(
+  value: unknown,
+  adapter: ModelAdapter,
+): { model: ExternalModel; selectable: boolean } {
   const row = record(value);
   const id = text(adapter.protocol === "gemini" ? row["name"] : row["id"]);
-  if (adapter.protocol !== "gemini" && adapter.protocol !== "cursor" && row["object"] !== "model") {
+  if (adapter.protocol === "list" && row["object"] !== "model") {
     throw new Error("Invalid model response");
   }
+  if (adapter.protocol === "anthropic" && row["type"] !== "model") {
+    throw new Error("Invalid model response");
+  }
+  let selectable = true;
   if (adapter.protocol === "gemini") {
     const methods = row["supportedGenerationMethods"];
     if (
@@ -41,12 +48,10 @@ function parseModel(value: unknown, adapter: ModelAdapter): ExternalModel | unde
     ) {
       throw new Error("Invalid model response");
     }
-    if (!methods.includes("generateContent")) {
-      return undefined;
-    }
+    selectable = methods.includes("generateContent");
   }
   const label = adapter.protocol === "cursor" ? `${text(row["displayName"], 128)} (${id})` : id;
-  return { id, name: text(label, 700) };
+  return { model: { id, name: text(label, 700) }, selectable };
 }
 
 function nextPage(body: Record<string, unknown>, adapter: ModelAdapter): string {
@@ -127,15 +132,15 @@ function pageUrl(adapter: ModelAdapter, cursor: string): URL {
 function parsePage(
   body: Record<string, unknown>,
   adapter: ModelAdapter,
-): { models: ExternalModel[]; cursor: string } {
+): { models: ExternalModel[]; cursor: string; ids: string[] } {
   const fields = { anthropic: "data", cursor: "items", gemini: "models", list: "data" };
   const values = body[fields[adapter.protocol]];
   if (!Array.isArray(values)) {
     throw new TypeError("Invalid model response");
   }
-  const models = values
-    .map((value: unknown) => parseModel(value, adapter))
-    .filter((model) => model !== undefined);
+  const parsed = values.map((value: unknown) => parseModel(value, adapter));
+  const models = parsed.filter((value) => value.selectable).map((value) => value.model);
+  const ids = parsed.map((value) => value.model.id);
   const cursor = nextPage(body, adapter);
   if (cursor && values.length === 0) {
     throw new Error("Invalid pagination");
@@ -143,7 +148,7 @@ function parsePage(
   if (adapter.protocol === "anthropic" && cursor && cursor !== record(values.at(-1))["id"]) {
     throw new Error("Invalid pagination");
   }
-  return { cursor, models };
+  return { cursor, ids, models };
 }
 
 async function fetchPage(
@@ -188,16 +193,16 @@ async function listServiceModels(
     // Pagination requires the preceding page's validated token.
     // oxlint-disable-next-line eslint/no-await-in-loop
     const result = await fetchPage(adapter, cursor, headers, signal, request);
-    for (const model of result.models) {
-      if (ids.has(model.id)) {
+    for (const id of result.ids) {
+      if (ids.has(id)) {
         throw new Error("Duplicate model ID");
       }
-      ids.add(model.id);
-      models.push(model);
-      if (models.length > 5000) {
+      ids.add(id);
+      if (ids.size > 5000) {
         throw new Error("Too many models");
       }
     }
+    models.push(...result.models);
     ({ cursor } = result);
     if (!cursor) {
       if (models.length === 0) {
