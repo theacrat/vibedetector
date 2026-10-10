@@ -107,6 +107,15 @@ test("new API identities never adopt manual UUIDs and survive reappearance", asy
   expect(first.find((model) => model.id === old.id)?.active).toBe(false);
   const saved = await sessionReport(db, CLAUDE, "owner", Date.now());
   expect(saved.model).toBe(old.id);
+  await saveReport(db, CLAUDE, "owner", "broken", Date.now(), old.id);
+  const updated = await sessionReport(db, CLAUDE, "owner", Date.now());
+  expect(updated.category).toBe("broken");
+  // SQL NULL retracts the existing owner's category without removing model metadata.
+  // oxlint-disable-next-line unicorn/no-null
+  await saveReport(db, CLAUDE, "owner", null, Date.now(), old.id);
+  const retracted = await sessionReport(db, CLAUDE, "owner", Date.now());
+  expect(retracted.model).toBe(old.id);
+  expect(retracted.category).toBeNull();
   await lease(db, "b");
   await applyCatalogue(db, CLAUDE, "b", [{ id: "other", name: "other" }]);
   await lease(db, "c");
