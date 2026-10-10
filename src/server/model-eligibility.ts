@@ -81,12 +81,26 @@ function capabilityEvidence(row: Record<string, unknown>, result: CatalogueMetad
   }
 }
 
+function deprecationDate(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/u.test(
+      value,
+    ) ||
+    !Number.isFinite(Date.parse(value))
+  ) {
+    throw new TypeError("Invalid model response");
+  }
+  const date = value.slice(0, 10);
+  if (new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date) {
+    throw new TypeError("Invalid model response");
+  }
+  return value;
+}
+
 function mistralEvidence(row: Record<string, unknown>, result: CatalogueMetadata) {
   if ("deprecation" in row && row["deprecation"] !== null) {
-    const value = row["deprecation"];
-    if (typeof value !== "string") {
-      object(value);
-    }
+    const value = deprecationDate(row["deprecation"]);
     result.evidence["deprecation"] = value;
     result.reasons.push("deprecated");
   }

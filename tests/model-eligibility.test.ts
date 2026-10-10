@@ -91,6 +91,17 @@ test("Gemini documented speech excludes without guessing from unknown IDs", asyn
   ]);
 });
 
+test("Gemini image and text output stays eligible", async () => {
+  const result = await catalogue("gemini", [
+    {
+      name: "models/gemini-3.1-flash-image",
+      outputModalities: ["image", "text"],
+      supportedGenerationMethods: ["generateContent"],
+    },
+  ]);
+  expect(result[0]?.metadata?.reasons).toEqual([]);
+});
+
 test("Mistral owner is the operator and canonical relationships remain explicit", async () => {
   const result = await catalogue("mistral", [
     {
@@ -123,7 +134,7 @@ test("Mistral owner is the operator and canonical relationships remain explicit"
       object: "model",
       type: "fine-tuned",
     },
-    { deprecation: "2026-09-01", id: "deprecated", object: "model" },
+    { deprecation: "2026-09-01T00:00:00Z", id: "deprecated", object: "model" },
   ]);
   expect(result.map((model) => model.metadata?.reasons ?? [])).toEqual([
     [],
@@ -136,6 +147,15 @@ test("Mistral owner is the operator and canonical relationships remain explicit"
   expect(result[0]?.metadata?.releasedAt).toBeUndefined();
   expect(result[1]?.metadata?.canonicalId).toBe("valid");
 });
+
+test.each(["", "not-a-date", "2026-02-30T00:00:00Z", "2026-09-01", { date: 42 }])(
+  "invalid Mistral deprecation metadata fails safely",
+  async (deprecation) => {
+    await expect(
+      catalogue("mistral", [{ deprecation, id: "model", object: "model" }]),
+    ).rejects.toThrow("Invalid model response");
+  },
+);
 
 test("Grok text capabilities and aliases use the full language catalogue", async () => {
   const result = await catalogue("grok", [

@@ -48,3 +48,9 @@ The critical path is provider evidence, normalisation, D1 integration, then live
 [Mistral's catalogue](https://docs.mistral.ai/models) and [GLM 5.3 record](https://docs.mistral.ai/models/zai-glm-5-3) identify third-party publishing. [Mistral Large 4](https://docs.mistral.ai/models/mistral-large-4-0) supplies its release date. The API inventory confirms that `owned_by` is `mistralai` for both native and routed models, so it cannot discriminate publisher ownership.
 
 [xAI's model reference](https://docs.x.ai/developers/rest-api-reference/inference/models) documents the authenticated language catalogue, creation dates, output modalities, and aliases. Exact documented records are a maintained supplement to sparse API responses, not a catalogue of assumed unsupported ID patterns. Future unknown IDs stay visible.
+
+## Independent review corrections
+
+Gemini 3.1 Flash Image remains eligible. A recommended replacement alone is not lifecycle evidence. The supplement now separates explicit lifecycle records from task capability records and stores the specific lifecycle source. The six shutdown entries are confirmed by elapsed shutdown dates in [Google's deprecation schedule](https://ai.google.dev/gemini-api/docs/deprecations). Gemini 3.7 Flash, Gemini 3.5 Flash, and Deep Research Pro have explicit deprecation announcements in [Google's release notes](https://ai.google.dev/gemini-api/docs/changelog). Omni Preview is excluded for documented video generation rather than an inferred lifecycle state.
+
+Mistral deprecation accepts only null or a valid RFC 3339 date-time string. Malformed values abort discovery and preserve membership, UUIDs, and the previous success time. D1 tests also exercise complete Mistral and Grok alias archival while preserving an owner's saved report identity.

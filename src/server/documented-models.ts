@@ -9,17 +9,46 @@ const geminiTasks = new Map<string, string>([
   ["gemini-3.5-transcribe", "transcription"],
   ["gemini-3.5-transcribe-live", "transcription"],
   ["gemini-omni-1.1-flash", "video-generation"],
-  ["gemini-3.1-flash-lite-preview", "shutdown"],
-  ["gemini-2.5-computer-use-preview-10-2025", "shutdown"],
-  ["gemini-3-pro-preview", "shutdown"],
-  ["gemini-3.7-flash", "deprecated"],
-  ["gemini-3.5-flash", "deprecated"],
-  ["gemini-3.1-flash-image", "deprecated"],
-  ["gemini-3.1-flash-image-preview", "shutdown"],
-  ["gemini-3-pro-image-preview", "shutdown"],
-  ["gemini-omni-flash-preview", "deprecated"],
-  ["antigravity-preview-05-2026", "shutdown"],
-  ["deep-research-pro-preview-12-2025", "deprecated"],
+  ["gemini-omni-flash-preview", "video-generation"],
+]);
+
+const geminiLifecycle = new Map<string, { task: string; source: string }>([
+  [
+    "gemini-3.1-flash-lite-preview",
+    { source: "https://ai.google.dev/gemini-api/docs/deprecations", task: "shutdown" },
+  ],
+  [
+    "gemini-2.5-computer-use-preview-10-2025",
+    { source: "https://ai.google.dev/gemini-api/docs/deprecations", task: "shutdown" },
+  ],
+  [
+    "gemini-3-pro-preview",
+    { source: "https://ai.google.dev/gemini-api/docs/deprecations", task: "shutdown" },
+  ],
+  [
+    "gemini-3.1-flash-image-preview",
+    { source: "https://ai.google.dev/gemini-api/docs/deprecations", task: "shutdown" },
+  ],
+  [
+    "gemini-3-pro-image-preview",
+    { source: "https://ai.google.dev/gemini-api/docs/deprecations", task: "shutdown" },
+  ],
+  [
+    "antigravity-preview-05-2026",
+    { source: "https://ai.google.dev/gemini-api/docs/deprecations", task: "shutdown" },
+  ],
+  [
+    "deep-research-pro-preview-12-2025",
+    { source: "https://ai.google.dev/gemini-api/docs/changelog", task: "deprecated" },
+  ],
+  [
+    "gemini-3.7-flash",
+    { source: "https://ai.google.dev/gemini-api/docs/changelog", task: "deprecated" },
+  ],
+  [
+    "gemini-3.5-flash",
+    { source: "https://ai.google.dev/gemini-api/docs/changelog", task: "deprecated" },
+  ],
 ]);
 
 const geminiReleases = new Map<string, string>([
@@ -53,7 +82,12 @@ function documentedGeminiRelease(id: string): { releasedAt: number; source: stri
 }
 
 function documentedGeminiTask(id: string): { task: string; source: string } | undefined {
-  const task = geminiTasks.get(id.replace(/^models\//u, ""));
+  const exactId = id.replace(/^models\//u, "");
+  const lifecycle = geminiLifecycle.get(exactId);
+  if (lifecycle) {
+    return lifecycle;
+  }
+  const task = geminiTasks.get(exactId);
   return task ? { source: GEMINI_SOURCE, task } : undefined;
 }
 

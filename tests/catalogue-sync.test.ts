@@ -8,6 +8,8 @@ import { saveReport, sessionReport } from "@/server/storage";
 
 const CLAUDE = "10000000-0000-4000-8000-000000000001";
 const CHATGPT = "10000000-0000-4000-8000-000000000002";
+const MISTRAL = "10000000-0000-4000-8000-000000000006";
+const GROK = "10000000-0000-4000-8000-000000000005";
 const runtimes: Miniflare[] = [];
 
 afterAll(async () => {
@@ -63,6 +65,124 @@ async function lease(db: D1Database, token: string) {
     .bind(token, CLAUDE)
     .run();
 }
+
+test.each(["", "not-a-date", "2026-02-30T00:00:00Z", { date: 42 }])(
+  "malformed Mistral deprecation preserves membership, UUIDs and last success",
+  async (deprecation) => {
+    const db = await database();
+    await migrate(db, "0005_catalogue_sync.sql");
+    const bindings = { DB: db, MISTRAL_API_KEY: "test" };
+    await syncCatalogue(bindings, MISTRAL, async () => {
+      await Promise.resolve();
+      return Response.json({
+        data: [
+          {
+            capabilities: { completion_chat: true },
+            // oxlint-disable-next-line unicorn/no-null -- The provider schema uses null for no deprecation.
+            deprecation: null,
+            id: "chat",
+            object: "model",
+          },
+        ],
+      });
+    });
+    const before = await loadModels(db, MISTRAL);
+    const success = await db
+      .prepare("SELECT succeeded_at FROM catalogue_sync WHERE provider = ?")
+      .bind(MISTRAL)
+      .first<{ succeeded_at: number }>();
+    await db
+      .prepare("UPDATE catalogue_sync SET attempted_at = 0 WHERE provider = ?")
+      .bind(MISTRAL)
+      .run();
+    const statuses = await syncCatalogue(bindings, MISTRAL, async () => {
+      await Promise.resolve();
+      return Response.json({
+        data: [
+          { capabilities: { completion_chat: true }, deprecation, id: "chat", object: "model" },
+        ],
+      });
+    });
+    expect(await loadModels(db, MISTRAL)).toEqual(before);
+    expect(
+      await db
+        .prepare("SELECT succeeded_at FROM catalogue_sync WHERE provider = ?")
+        .bind(MISTRAL)
+        .first<{ succeeded_at: number }>(),
+    ).toEqual(success);
+    expect(statuses.find((status) => status.provider === MISTRAL)?.status).toBe(
+      "Invalid model response",
+    );
+  },
+);
+
+test.each(["mistral", "grok"])(
+  "complete %s sync archives explicit aliases without losing report identity",
+  async (slug) => {
+    const db = await database();
+    await migrate(db, "0005_catalogue_sync.sql");
+    const provider = slug === "mistral" ? MISTRAL : GROK;
+    const bindings = { DB: db, MISTRAL_API_KEY: "test", XAI_API_KEY: "test" };
+    const rows: {
+      aliases: string[];
+      capabilities: { completion_chat: boolean };
+      id: string;
+      name: string;
+      object: string;
+      output_modalities: string[];
+    }[] = [
+      {
+        aliases: [],
+        capabilities: { completion_chat: true },
+        id: "canonical",
+        name: "canonical",
+        object: "model",
+        output_modalities: ["text"],
+      },
+      {
+        aliases: [],
+        capabilities: { completion_chat: true },
+        id: "alias",
+        name: "alias",
+        object: "model",
+        output_modalities: ["text"],
+      },
+    ];
+    const request = async () => {
+      await Promise.resolve();
+      return Response.json({ [slug === "mistral" ? "data" : "models"]: rows });
+    };
+    await syncCatalogue(bindings, provider, request);
+    const before = await loadModels(db, provider);
+    const alias = before.find((model) => model.name === "alias");
+    if (!alias) {
+      throw new Error("Missing alias");
+    }
+    const now = Date.now();
+    await saveReport(db, provider, "owner", "slow", now, alias.id);
+    rows[0]?.aliases.push("alias");
+    if (slug === "mistral" && rows[1]) {
+      rows[1].name = "canonical";
+      rows[1].aliases.push("canonical");
+    }
+    await db
+      .prepare("UPDATE catalogue_sync SET attempted_at = 0 WHERE provider = ?")
+      .bind(provider)
+      .run();
+    await syncCatalogue(bindings, provider, request);
+    const after = await loadModels(db, provider);
+    expect(after.filter((model) => model.active).map((model) => model.name)).toEqual(["canonical"]);
+    expect(after.find((model) => model.id === alias.id)?.active).toBe(false);
+    const saved = await sessionReport(db, provider, "owner", now);
+    expect(saved.model).toBe(alias.id);
+    const archived = await db
+      .prepare("SELECT filter_reason FROM models WHERE id = ?")
+      .bind(alias.id)
+      .first();
+    expect(archived).toEqual({ filter_reason: '["alias-of-listed-canonical"]' });
+    await saveReport(db, provider, "owner", "broken", now, alias.id);
+  },
+);
 
 test("release order, first-seen arrivals and archived reappearance preserve exact UUIDs", async () => {
   const db = await database();
