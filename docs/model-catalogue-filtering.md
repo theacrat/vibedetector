@@ -40,3 +40,11 @@ An upstream empty catalogue remains a sync failure and preserves the previous ca
 6. Open a PR and request the parent's independent review before merge. Nested delegation is unavailable, so the parent owns the independent review layer.
 
 The critical path is provider evidence, normalisation, D1 integration, then live verification. Keep transport and persistence changes serial in the owned worktree. No production migration or deployment is part of this change. Account inventories remain local and are neither committed nor uploaded.
+
+## Evidence checked on 11 October 2026
+
+[Google's model catalogue](https://ai.google.dev/gemini-api/docs/models) and [release notes](https://ai.google.dev/gemini-api/docs/changelog) identify exact specialised endpoints, lifecycle, and release dates. [Gemini 2.5 Flash Image](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-image) explicitly supports text and image output, so image generation does not by itself make a model image-only. The implementation keeps multimodal text-output models.
+
+[Mistral's catalogue](https://docs.mistral.ai/models) and [GLM 5.3 record](https://docs.mistral.ai/models/zai-glm-5-3) identify third-party publishing. [Mistral Large 4](https://docs.mistral.ai/models/mistral-large-4-0) supplies its release date. The API inventory confirms that `owned_by` is `mistralai` for both native and routed models, so it cannot discriminate publisher ownership.
+
+[xAI's model reference](https://docs.x.ai/developers/rest-api-reference/inference/models) documents the authenticated language catalogue, creation dates, output modalities, and aliases. Exact documented records are a maintained supplement to sparse API responses, not a catalogue of assumed unsupported ID patterns. Future unknown IDs stay visible.

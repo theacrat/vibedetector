@@ -66,6 +66,8 @@ Refreshes share a 60-second per-provider cooldown with the scheduled job. A 120-
 
 Cursor uses its official Cloud Agent model list. Z.AI uses its OpenAI-compatible API Platform model list. Copilot is retired without deleting its providers, models, or reports. A failed or incomplete sync keeps the prior catalogue.
 
+The eligibility update also requires `0007_catalogue_eligibility.sql` through the approved deployment process. It preserves UUIDs and reports while adding first-seen timestamps, evidence, and archive reasons. Both model selectors use the backend's newest-first order. Reliable provider release dates take precedence over persistent first-seen dates. Unknown capability metadata stays visible. Explicit non-chat capability, lifecycle, fine-tuning, third-party publisher, and alias records can archive choices. A validated non-empty response where every entry is excluded is a successful zero-active catalogue, unlike an empty upstream response. See `docs/model-catalogue-filtering.md` for the evidence rules.
+
 Inspect configured endpoints without changing the database:
 
 ```sh

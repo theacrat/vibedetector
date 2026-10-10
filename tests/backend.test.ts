@@ -61,6 +61,8 @@ const migrations = [
   "0003_model_catalogue.sql",
   "0004_catalogue_identities.sql",
   "0005_catalogue_sync.sql",
+  "0006_model_metadata.sql",
+  "0007_catalogue_eligibility.sql",
 ];
 const initialProvider = {
   active: true,

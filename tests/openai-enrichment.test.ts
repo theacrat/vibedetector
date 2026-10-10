@@ -2,6 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 
+import { loadActiveModels } from "@/server/catalogue";
 import { syncCatalogue } from "@/server/catalogue-sync";
 import type { CatalogueFetch } from "@/server/model-api";
 import { parseDocument } from "@/server/openai-document";
@@ -65,6 +66,7 @@ async function database() {
     "0004_catalogue_identities.sql",
     "0005_catalogue_sync.sql",
     "0006_model_metadata.sql",
+    "0007_catalogue_eligibility.sql",
   ]) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- Each migration needs the preceding schema.
     const sql = await Bun.file(`migrations/${filename}`).text();
@@ -110,6 +112,44 @@ test("document fields are sourced literally", () => {
     modelId: "gpt-5.4",
     outputModalities: ["text"],
     snapshots: ["gpt-5.4-2026-03-05"],
+  });
+});
+
+test("sync filters documented non-chat output and keeps unknowns and exact callable snapshots", async () => {
+  const db = await database();
+  await db
+    .prepare(
+      "UPDATE catalogue_sync SET lease = '', lease_until = 0, attempted_at = 0 WHERE provider = ?",
+    )
+    .bind(PROVIDER)
+    .run();
+  const index = `${INDEX_BODY}- [Speech](/api/docs/models/speech.md)\n`;
+  await syncCatalogue({ DB: db, OPENAI_API_KEY: "test" }, PROVIDER, async (url) => {
+    await Promise.resolve();
+    if (url === "https://api.openai.com/v1/models") {
+      return Response.json({
+        data: ["gpt-5.4", "gpt-5.4-2026-03-05", "speech", "unknown"].map((id) => ({
+          id,
+          object: "model",
+        })),
+      });
+    }
+    let markdown = url === INDEX ? index : DOCUMENT;
+    if (url.endsWith("speech.md")) {
+      markdown = DOCUMENT.replaceAll("gpt-5.4", "speech")
+        .replace("Output modalities: text", "Output modalities: audio")
+        .replace("`v1/responses` | Supported", "`v1/responses` | Not supported");
+    }
+    return new Response(markdown, { headers: { "content-type": "text/markdown" } });
+  });
+  const active = await loadActiveModels(db, PROVIDER);
+  expect(active.map((model) => model.name)).toEqual(["gpt-5.4", "gpt-5.4-2026-03-05", "unknown"]);
+  const archived = await db
+    .prepare("SELECT active, filter_reason FROM models WHERE external_id = 'speech'")
+    .first();
+  expect(archived).toEqual({
+    active: 0,
+    filter_reason: '["no-text-output","no-chat-or-responses"]',
   });
 });
 
