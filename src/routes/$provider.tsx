@@ -1,7 +1,7 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 
-import { isId, isRange } from "@/domain";
+import { isId, isRange, catalogueScope } from "@/domain";
 import type { Dashboard, Overview, Range } from "@/domain";
 import { parseDashboard, parseOverview } from "@/ui/catalogue-data";
 import { Chart } from "@/ui/chart";
@@ -191,6 +191,7 @@ function ProviderPage() {
         <ProviderHero dashboard={dashboard} />
         <Report id={provider.id} key={provider.id} />
       </section>
+      <p className="sub">{catalogueScope(provider.id)}</p>
       {(filterError || refreshError) && (
         <p role="alert" className="error">
           {filterError || refreshError}

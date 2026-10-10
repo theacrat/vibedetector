@@ -1,61 +1,77 @@
 import { expect, test } from "@playwright/test";
 
+import type { SyncStatus } from "@/server/catalogue-sync";
+
 import { adminProviders, claudeId, chatgptId, models } from "./identity-fixtures";
 
-function field(raw: object, name: string) {
-  return name in raw && typeof Reflect.get(raw, name) === "string"
-    ? String(Reflect.get(raw, name))
-    : "";
+const initialStatuses: SyncStatus[] = adminProviders.map((provider) => ({
+  attemptedAt: 0,
+  configured: false,
+  modelCount: 0,
+  pending: false,
+  provider: provider.id,
+  scope: "Official API-discovered models available to the configured account",
+  status: "API key not configured",
+  succeededAt: 0,
+}));
+
+function catalogueResponse(
+  path: string,
+  catalogue: unknown,
+  statuses: unknown = initialStatuses,
+): unknown {
+  if (path.endsWith("/providers")) {
+    return adminProviders;
+  }
+  if (path.endsWith("/sync")) {
+    return statuses;
+  }
+  return catalogue;
 }
 
-test("admin key stays out of URLs and storage while UUID catalogue changes persist", async ({
+test("admin key stays out of URLs and storage while provider sync refreshes the readonly catalogue", async ({
   page,
 }) => {
   const key = "test-only-key-not-a-real-secret-123456";
   let authenticated = false;
-  const catalogue = models(["Fresh model"], chatgptId);
+  let catalogue = models(["Fresh model"], chatgptId);
+  let statuses = structuredClone(initialStatuses);
   const writes: unknown[] = [];
   await page.route("**/api/admin/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     expect(route.request().url()).not.toContain(key);
-    const raw: unknown =
+    const body: unknown =
       route.request().method() === "POST" ? route.request().postDataJSON() : undefined;
-    const body = raw && typeof raw === "object" ? raw : undefined;
-    if (body) {
-      writes.push(body);
-    }
     if (path.endsWith("/login")) {
-      authenticated = Boolean(body && field(body, "key") === key);
+      authenticated = Boolean(
+        body && typeof body === "object" && "key" in body && body.key === key,
+      );
     }
     if (path.endsWith("/logout")) {
       authenticated = false;
-      await route.fulfill({ json: { ok: true } });
+      await route.fulfill({ json: { authenticated: false } });
       return;
     }
     if (!authenticated) {
       await route.fulfill({ json: { error: "Sign in required." }, status: 401 });
       return;
     }
-    if (path.endsWith("/state") && body) {
-      const model = catalogue.find((entry) => entry.id === field(body, "id"));
-      if (model) {
-        model.active = "active" in body && body.active === true;
-      }
-    } else if (path.endsWith("/update") && body) {
-      const model = catalogue.find((entry) => entry.id === field(body, "id"));
-      if (model) {
-        model.name = field(body, "name");
-      }
-    } else if (path.endsWith("/models") && body) {
-      catalogue.push({
-        active: true,
-        id: "30000000-0000-4000-8000-000000000001",
-        name: field(body, "name"),
-        provider: field(body, "provider"),
-      });
+    if (path.endsWith("/sync") && body) {
+      writes.push(body);
+      catalogue = models(["Discovered model"], chatgptId);
+      statuses = statuses.map((status) => ({
+        ...status,
+        configured: true,
+        modelCount: status.provider === chatgptId ? 1 : 0,
+        status: "Synced",
+        succeededAt: 1_800_000_000_000,
+      }));
     }
-    const catalogueResponse = path.endsWith("/providers") ? adminProviders : catalogue;
-    await route.fulfill({ json: path.endsWith("/login") ? { ok: true } : catalogueResponse });
+    await route.fulfill({
+      json: path.endsWith("/login")
+        ? { authenticated: true }
+        : catalogueResponse(path, catalogue, statuses),
+    });
   });
   await page.goto("/admin");
   const input = page.getByLabel("Administrator key");
@@ -68,42 +84,31 @@ test("admin key stays out of URLs and storage while UUID catalogue changes persi
   await input.fill(key);
   await page.getByRole("button", { exact: true, name: "Sign in" }).click();
   await expect(page.getByRole("heading", { exact: true, name: "Providers" })).toBeFocused();
-  await page.getByRole("link", { name: "Edit ChatGPT" }).click();
-  await expect(page.getByRole("heading", { name: "Edit ChatGPT" })).toBeFocused();
-  await expect(page.getByLabel("Provider", { exact: true })).toHaveCount(0);
-  await page.getByText("Add a model", { exact: true }).click();
-  await page.getByLabel("Model name", { exact: true }).fill("New database model");
-  await page.getByRole("button", { name: "Add model" }).click();
-  await page
-    .locator(".admin-models li")
-    .filter({ hasText: "New database model" })
-    .getByText("Edit model", { exact: true })
-    .click();
+  await expect(page.getByRole("heading", { name: "Catalogue sync" })).toBeVisible();
+  const chatgpt = page
+    .locator(".admin-providers > li")
+    .filter({ has: page.getByRole("heading", { exact: true, name: "ChatGPT" }) });
+  await expect(chatgpt).toContainText("API key not configured");
+  await expect(chatgpt).toContainText("Last success: Never. Models: 0.");
+  await chatgpt.getByRole("link", { name: "View catalogue" }).click();
+  await expect(page).toHaveURL(new RegExp(`/admin/providers/${chatgptId}$`, "u"));
+  await expect(page.getByText("Fresh model", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Model name", { exact: true })).toHaveCount(0);
   await expect(
-    page.getByRole("button", { exact: true, name: "Archive New database model" }),
-  ).toBeEnabled();
-  await page.getByRole("button", { exact: true, name: "Archive New database model" }).click();
-  await expect(page.getByRole("button", { name: "Reactivate New database model" })).toBeFocused();
-  await page.getByRole("button", { name: "Reactivate New database model" }).click();
-  await expect(
-    page.getByRole("button", { exact: true, name: "Archive New database model" }),
-  ).toBeEnabled();
-  expect(writes).toContainEqual({ active: false, id: "30000000-0000-4000-8000-000000000001" });
-  await page.getByLabel("Rename New database model").fill("Corrected model");
-  await page
-    .locator(".admin-rename")
-    .filter({ has: page.getByLabel("Rename New database model") })
-    .getByRole("button")
-    .click();
-  await expect(
-    page.getByRole("button", { exact: true, name: "Archive Corrected model" }),
-  ).toBeEnabled();
-  expect(writes).toContainEqual({
-    id: "30000000-0000-4000-8000-000000000001",
-    name: "Corrected model",
-  });
+    page.getByRole("button", { name: /^(?:Add|Edit|Archive|Reactivate|Move|Save) /u }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { exact: true, name: "Refresh provider" }).click();
+  await expect(page.getByText("Discovered model", { exact: true })).toBeVisible();
+  await expect(page.locator(".admin-providers")).toContainText("Synced");
+  expect(writes).toEqual([{ provider: chatgptId }]);
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Model catalogue" })).toBeVisible();
+  await expect(page.getByText("Discovered model", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "All providers" }).click();
+  await page.getByRole("button", { exact: true, name: "Refresh all providers" }).click();
+  await expect(
+    page.getByRole("button", { exact: true, name: "Refresh all providers" }),
+  ).toBeEnabled();
+  expect(writes).toEqual([{ provider: chatgptId }, {}]);
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(input).toBeFocused();
   await expect(input).toHaveValue("");
@@ -160,7 +165,7 @@ for (const catalogue of [
       "Could not load the model catalogue. Please try again.",
     );
     await expect(page.getByLabel("Administrator key")).toBeEnabled();
-    await expect(page.getByRole("heading", { name: "Model catalogue" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Catalogue sync" })).toHaveCount(0);
   });
 }
 
@@ -168,9 +173,10 @@ test("logout clears catalogue without follow-up reads", async ({ page }) => {
   let loggedOut = false;
   let readsAfterLogout = 0;
   await page.route("**/api/admin/**", async (route) => {
-    if (route.request().url().endsWith("/logout")) {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/logout")) {
       loggedOut = true;
-      await route.fulfill({ json: { ok: true } });
+      await route.fulfill({ json: { authenticated: false } });
       return;
     }
     if (loggedOut) {
@@ -179,204 +185,146 @@ test("logout clears catalogue without follow-up reads", async ({ page }) => {
       return;
     }
     await route.fulfill({
-      json: route.request().url().endsWith("/providers") ? adminProviders : models(["Live model"]),
+      json: catalogueResponse(path, models(["Live model"]), initialStatuses),
     });
   });
   await page.goto("/admin");
   await expect(page.getByRole("heading", { exact: true, name: "Providers" })).toBeFocused();
+  await expect(page.getByText("API key not configured").first()).toBeVisible();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByLabel("Administrator key")).toBeFocused();
-  await expect(page.getByRole("heading", { name: "Model catalogue" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Catalogue sync" })).toHaveCount(0);
   expect(readsAfterLogout).toBe(0);
 });
 
-test("expired authentication returns focus to the key input", async ({ page }) => {
+test("expired authentication during refresh returns focus to the key input", async ({ page }) => {
   await page.route("**/api/admin/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
     await route.fulfill(
       route.request().method() === "POST"
         ? { json: { error: "Session expired." }, status: 401 }
         : {
-            json: route.request().url().endsWith("/providers")
-              ? adminProviders
-              : models(["Live model"]),
+            json: catalogueResponse(path, models(["Live model"]), initialStatuses),
           },
     );
   });
-  await page.goto("/admin");
-  await page.getByRole("link", { name: "Edit Claude" }).click();
-  await page.getByText("Edit model", { exact: true }).click();
-  await page.getByRole("button", { exact: true, name: "Archive Live model" }).click();
+  await page.goto(`/admin/providers/${claudeId}`);
+  await expect(page.getByText("Live model", { exact: true })).toBeVisible();
+  await page.getByRole("button", { exact: true, name: "Refresh provider" }).click();
   await expect(page.getByLabel("Administrator key")).toBeFocused();
   await expect(page.getByRole("alert")).toHaveText("Session expired.");
 });
 
-test("model UUID order includes archived rows and retains movement focus", async ({ page }) => {
-  let catalogue = models(["First model", "Archived model", "Last model"]);
+test("provider catalogue shows archived names, account scope and successful sync metadata", async ({
+  page,
+}) => {
+  const catalogue = models(["Live model", "Old model"]);
   const [, archived] = catalogue;
   if (!archived) {
     throw new Error("Missing archived model fixture");
   }
   archived.active = false;
-  const writes: unknown[] = [];
-  await page.route("**/api/admin/**", async (route) => {
-    if (route.request().url().endsWith("/order")) {
-      const body: unknown = route.request().postDataJSON();
-      if (!body || typeof body !== "object" || !("ids" in body) || !Array.isArray(body.ids)) {
-        throw new Error("Expected UUID order.");
-      }
-      writes.push(body);
-      catalogue = body.ids.flatMap((id: unknown) => catalogue.filter((model) => model.id === id));
-      await route.fulfill({ json: catalogue });
-      return;
-    }
-    await route.fulfill({
-      json: route.request().url().endsWith("/providers") ? adminProviders : catalogue,
-    });
-  });
-  await page.goto("/admin");
-  await page.getByRole("link", { name: "Edit Claude" }).click();
-  const rows = page.locator(".admin-models b");
-  await page
-    .locator(".admin-models li")
-    .filter({ hasText: "First model" })
-    .getByText("Edit model", { exact: true })
-    .click();
-  await expect(rows).toHaveText(["First model", "Archived model", "Last model"]);
-  await expect(
-    page.getByRole("button", { exact: true, name: "Move up First model" }),
-  ).toBeDisabled();
-  const down = page.getByRole("button", { exact: true, name: "Move down First model" });
-  await down.click();
-  await expect(rows).toHaveText(["Archived model", "First model", "Last model"]);
-  await expect(down).toBeFocused();
-  expect(writes).toEqual([
-    {
-      ids: [
-        "20000000-0000-4000-8000-000000000002",
-        "20000000-0000-4000-8000-000000000001",
-        "20000000-0000-4000-8000-000000000003",
-      ],
-      provider: claudeId,
-    },
-  ]);
-  await down.click();
-  await expect(rows).toHaveText(["Archived model", "Last model", "First model"]);
-  await expect(down).toBeDisabled();
-  const up = page.getByRole("button", { exact: true, name: "Move up First model" });
-  await expect(up).toBeFocused();
-  await up.press("Enter");
-  await expect(rows).toHaveText(["Archived model", "First model", "Last model"]);
-  await page.reload();
-  await expect(rows).toHaveText(["Archived model", "First model", "Last model"]);
-  await page.getByRole("link", { name: "All providers" }).click();
-  await page.getByRole("link", { name: "Edit ChatGPT" }).click();
-  await expect(rows).toHaveCount(0);
-});
-
-test("reorder waits for authoritative catalogue and errors do not move rows", async ({ page }) => {
-  const catalogue = models(["First model", "Middle model", "Last model"]);
-  const { promise: gate, resolve: release } = Promise.withResolvers<undefined>();
-  let rejectOrder = true;
-  await page.route("**/api/admin/**", async (route) => {
-    if (route.request().url().endsWith("/order")) {
-      await gate;
-      await route.fulfill(
-        rejectOrder
-          ? { json: { error: "Could not save model order." }, status: 503 }
-          : { json: [catalogue[2], catalogue[0], catalogue[1]] },
-      );
-      return;
-    }
-    const orderedModels = rejectOrder ? catalogue : [catalogue[2], catalogue[0], catalogue[1]];
-    await route.fulfill({
-      json: route.request().url().endsWith("/providers") ? adminProviders : orderedModels,
-    });
-  });
-  await page.goto("/admin");
-  await page.getByRole("link", { name: "Edit Claude" }).click();
-  const rows = page.locator(".admin-models b");
-  await page
-    .locator(".admin-models li")
-    .filter({ hasText: "First model" })
-    .getByText("Edit model", { exact: true })
-    .click();
-  const down = page.getByRole("button", { exact: true, name: "Move down First model" });
-  await down.click();
-  await expect(down).toBeDisabled();
-  await expect(rows).toHaveText(["First model", "Middle model", "Last model"]);
-  release(undefined);
-  await expect(page.getByRole("alert")).toHaveText("Could not save model order.");
-  await expect(rows).toHaveText(["First model", "Middle model", "Last model"]);
-  await expect(down).toBeFocused();
-  rejectOrder = false;
-  await down.click();
-  await expect(rows).toHaveText(["Last model", "First model", "Middle model"]);
-  await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(down).toBeFocused();
-});
-
-test("provider edits preserve UUID and slug unless explicitly changed", async ({ page }) => {
-  let providers = structuredClone(adminProviders);
-  const writes: unknown[] = [];
+  const statuses = initialStatuses.map((status) => ({
+    ...status,
+    configured: true,
+    modelCount: 1,
+    scope: "Cloud Agent models",
+    status: "Synced",
+    succeededAt: 1_800_000_000_000,
+  }));
   await page.route("**/api/admin/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
-    if (route.request().method() === "POST") {
-      const body: unknown = route.request().postDataJSON();
-      writes.push(body);
-      if (body && typeof body === "object" && path.endsWith("/update")) {
-        providers = providers.map((provider) =>
-          provider.id === field(body, "id")
-            ? { ...provider, name: field(body, "name"), slug: field(body, "slug") }
-            : provider,
-        );
+    await route.fulfill({
+      json: catalogueResponse(path, catalogue, statuses),
+    });
+  });
+  await page.goto(`/admin/providers/${claudeId}`);
+  await expect(page.locator(".admin-providers > li")).toHaveCount(1);
+  await expect(page.getByText("Live model", { exact: true })).toBeVisible();
+  await expect(page.getByText("Old model (archived)", { exact: true })).toBeVisible();
+  await expect(page.getByText("Cloud Agent models", { exact: true })).toBeVisible();
+  await expect(page.locator(".admin-providers")).toContainText("Models: 1.");
+  await expect(page.locator(".admin-providers")).not.toContainText("Last success: Never");
+  await expect(
+    page.getByRole("button", { name: /^(?:Add|Edit|Archive|Reactivate|Move|Save) /u }),
+  ).toHaveCount(0);
+});
+
+test("refresh waits for authoritative catalogue and failure keeps previous rows", async ({
+  page,
+}) => {
+  let catalogue = models(["Previous model"]);
+  const { promise: gate, resolve: release } = Promise.withResolvers<undefined>();
+  let rejectRefresh = true;
+  await page.route("**/api/admin/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/sync") && route.request().method() === "POST") {
+      await gate;
+      if (rejectRefresh) {
+        await route.fulfill({ json: { error: "Could not refresh catalogue." }, status: 503 });
+      } else {
+        catalogue = models(["Discovered model"]);
+        await route.fulfill({ json: initialStatuses });
       }
-      if (body && typeof body === "object" && path.endsWith("/state")) {
-        providers = providers.map((provider) =>
-          provider.id === field(body, "id")
-            ? { ...provider, active: "active" in body && body.active === true }
-            : provider,
-        );
-      }
-      if (body && typeof body === "object" && "ids" in body && Array.isArray(body.ids)) {
-        providers = body.ids.flatMap((id: unknown) =>
-          providers.filter((provider) => provider.id === id),
-        );
-      }
-      await route.fulfill({ json: providers });
       return;
     }
-    await route.fulfill({ json: path.endsWith("/providers") ? providers : [] });
+    await route.fulfill({
+      json: catalogueResponse(path, catalogue, initialStatuses),
+    });
   });
-  await page.goto("/admin");
-  await page.getByRole("link", { name: "Edit Claude" }).click();
-  const form = page
-    .locator(".admin-provider-form")
-    .filter({ has: page.locator(`input[id="${claudeId}-name"]`) });
-  await page.getByText("Provider settings", { exact: true }).click();
-  await form.getByLabel("Provider name").fill("Claude corrected");
-  await form.getByRole("button", { name: "Save provider" }).click();
-  await expect(page.getByRole("heading", { name: "Edit Claude corrected" })).toBeVisible();
-  expect(writes[0]).toEqual({
-    id: claudeId,
-    logo: "/logos/claude.svg",
-    maker: "Anthropic",
-    name: "Claude corrected",
-    slug: "claude",
-    status: "https://status.claude.com",
-    statusLabel: "Official status",
-  });
-  await form.getByLabel("URL slug").fill("claude-corrected");
-  await expect(form).toContainText("Changing the URL slug stops old links from working");
-  await form.getByRole("button", { name: "Save provider" }).click();
-  await expect(form.getByLabel("URL slug")).toHaveValue("claude-corrected");
-  await page
-    .getByRole("button", { exact: true, name: "Archive provider Claude corrected" })
-    .click();
-  await expect(
-    page.getByRole("button", { exact: true, name: "Reactivate provider Claude corrected" }),
-  ).toBeFocused();
-  await page.getByRole("link", { name: "All providers" }).click();
-  await expect(page.locator(".admin-providers b")).toHaveText(["ChatGPT", "Claude corrected"]);
-  await expect(page.getByRole("button", { name: /Move .* provider/u })).toHaveCount(0);
-  expect(writes).not.toContainEqual({ ids: [chatgptId, claudeId] });
+  await page.goto(`/admin/providers/${claudeId}`);
+  await expect(page.getByText("Previous model", { exact: true })).toBeVisible();
+  await page.getByRole("button", { exact: true, name: "Refresh provider" }).click();
+  await expect(page.getByRole("button", { exact: true, name: "Refreshing..." })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeDisabled();
+  await expect(page.getByText("Previous model", { exact: true })).toBeVisible();
+  release(undefined);
+  await expect(page.getByRole("alert")).toHaveText("Could not refresh catalogue.");
+  await expect(page.getByRole("button", { exact: true, name: "Refresh provider" })).toBeEnabled();
+  await expect(page.getByText("Previous model", { exact: true })).toBeVisible();
+  rejectRefresh = false;
+  await page.getByRole("button", { exact: true, name: "Refresh provider" }).click();
+  await expect(page.getByText("Discovered model", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
 });
+
+test("legacy new-provider route is a sync view without a creation form", async ({ page }) => {
+  const statuses = initialStatuses.map((status) => ({
+    ...status,
+    scope: "Provider reporting only. No supported model listing API.",
+    status: "Provider reporting only",
+  }));
+  await page.route("**/api/admin/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    await route.fulfill({
+      json: catalogueResponse(path, models(["Live model"]), statuses),
+    });
+  });
+  await page.goto("/admin/providers/new");
+  await expect(page).toHaveURL("/admin");
+  await expect(page.getByRole("heading", { name: "Catalogue sync" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { exact: true, name: "Refresh all providers" }),
+  ).toBeEnabled();
+  await expect(page.getByText("Provider reporting only", { exact: true }).first()).toBeVisible();
+  await expect(page.getByLabel("Provider name", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { exact: true, name: "Add provider" })).toHaveCount(0);
+});
+
+for (const status of [{ invalid: true }, [{ ...initialStatuses[0], pending: "yes" }]]) {
+  test(`malformed sync status ${JSON.stringify(status)} reports a visible error`, async ({
+    page,
+  }) => {
+    await page.route("**/api/admin/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      await route.fulfill({
+        json: catalogueResponse(path, models(["Live model"]), status),
+      });
+    });
+    await page.goto("/admin");
+    await expect(page.getByRole("alert")).toHaveText("Could not load sync status.");
+    await expect(
+      page.getByRole("button", { exact: true, name: "Refresh all providers" }),
+    ).toBeEnabled();
+  });
+}

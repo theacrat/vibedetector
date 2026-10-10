@@ -48,10 +48,6 @@ form.admin-panel {
   margin-top: 24px;
   color: var(--muted);
 }
-.admin-help {
-  color: var(--muted);
-  font-size: 14px;
-}
 .admin-heading {
   display: flex;
   align-items: center;
@@ -62,17 +58,6 @@ form.admin-panel {
 .admin-heading h2 {
   margin: 0;
 }
-.admin-models {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-.admin-models li {
-  display: grid;
-  gap: 10px;
-  padding: 14px 0;
-  border-top: 1px solid var(--line);
-}
 .admin-providers {
   list-style: none;
   padding: 0;
@@ -80,85 +65,6 @@ form.admin-panel {
 .admin-providers li {
   padding-block: 20px;
   border-top: 1px solid var(--line);
-}
-.admin-panel summary {
-  cursor: pointer;
-  padding-block: 12px;
-}
-.admin-settings > summary {
-  font-weight: 600;
-  padding-block: 4px;
-}
-.admin-secondary-actions {
-  color: var(--muted);
-  font-size: 14px;
-}
-.admin-secondary-actions[open] {
-  color: var(--paper);
-}
-.admin-secondary-actions .admin-model-actions {
-  margin-top: 8px;
-}
-.admin-model-summary {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-}
-.admin-model-summary span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.admin-add-model {
-  margin-block: 16px 8px;
-  border-block: 1px solid var(--line);
-}
-.admin-add-model form {
-  padding-block: 12px;
-}
-.admin-provider-form {
-  margin-block: 16px;
-}
-.admin-provider-form label {
-  display: block;
-  margin-bottom: 8px;
-}
-.admin-id {
-  overflow-wrap: anywhere;
-  color: var(--muted);
-}
-.admin-models small {
-  display: block;
-  margin-top: 4px;
-  color: var(--muted);
-}
-.admin-models code {
-  display: block;
-  color: var(--muted);
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-.admin-model-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-.admin-provider-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 12px;
-}
-.admin-provider-summary span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.admin-provider-summary small {
-  display: block;
-  margin-top: 6px;
-  color: var(--muted);
 }
 .admin a.plain-button {
   display: inline-flex;
@@ -179,16 +85,5 @@ form.admin-panel {
   }
   .admin-heading {
     flex-wrap: wrap;
-  }
-  .admin-models li {
-    align-items: flex-start;
-  }
-  .admin-model-summary {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .admin-model-actions {
-    justify-content: flex-start;
   }
 }

@@ -3,19 +3,21 @@ import { expect, test } from "@playwright/test";
 test("homepage links to every provider and provider pages survive reload", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page.locator(".card b")).toHaveText([
+    "ChatGPT",
+    "Claude",
+    "Cursor",
+    "DeepSeek",
+    "Gemini",
+    "Grok",
+    "Kimi",
+    "Mistral",
+    "Z.AI",
+  ]);
   await Promise.all(
-    [
-      "claude",
-      "chatgpt",
-      "gemini",
-      "copilot",
-      "grok",
-      "mistral",
-      "deepseek",
-      "cursor",
-      "zai",
-      "kimi",
-    ].map(async (id) => expect(page.locator(`main a[href^="/${id}?"]`).first()).toBeVisible()),
+    ["claude", "chatgpt", "gemini", "grok", "mistral", "deepseek", "cursor", "zai", "kimi"].map(
+      async (id) => expect(page.locator(`main a[href^="/${id}?"]`).first()).toBeVisible(),
+    ),
   );
   await page.getByRole("link", { name: "View Claude reports" }).click();
   await expect(page.getByRole("heading", { name: "How's Claude feeling?" })).toBeVisible();
@@ -32,6 +34,17 @@ test("homepage links to every provider and provider pages survive reload", async
 
 test("unknown providers return a not found page", async ({ page }) => {
   const response = await page.goto("/not-a-provider");
+  expect(response?.status()).toBe(404);
+  await expect(page.getByText(/not found/iu).first()).toBeVisible();
+});
+
+test("retired Copilot links return not found and do not appear on the homepage", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: "View Claude reports" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "View Copilot reports" })).toHaveCount(0);
+  const response = await page.goto("/copilot");
   expect(response?.status()).toBe(404);
   await expect(page.getByText(/not found/iu).first()).toBeVisible();
 });
@@ -60,22 +73,13 @@ test("all provider paths return server-rendered content without JavaScript", asy
   const page = await context.newPage();
   try {
     await Promise.all(
-      [
-        "claude",
-        "chatgpt",
-        "gemini",
-        "copilot",
-        "grok",
-        "mistral",
-        "deepseek",
-        "cursor",
-        "zai",
-        "kimi",
-      ].map(async (id) => {
-        const response = await context.request.get(`/${id}`);
-        expect(response.status()).toBe(200);
-        expect(await response.text()).toContain("issue reports this hour");
-      }),
+      ["claude", "chatgpt", "gemini", "grok", "mistral", "deepseek", "cursor", "zai", "kimi"].map(
+        async (id) => {
+          const response = await context.request.get(`/${id}`);
+          expect(response.status()).toBe(200);
+          expect(await response.text()).toContain("issue reports this hour");
+        },
+      ),
     );
     await page.goto("/gemini");
     await expect(page.getByRole("heading", { name: "How's Gemini feeling?" })).toBeVisible();

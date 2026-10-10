@@ -1,6 +1,6 @@
 # vibedetector
 
-The provider/model UUID rework is specified in `docs/catalogue-identities.md`. Providers and models have stable IDs separate from editable display names; provider slugs remain URL identifiers. `/admin` lists providers; each Edit link opens the provider's details and models together. A display-name edit does not alter reports or filter IDs. A slug edit explicitly changes the page URL. Existing catalogue documentation below is superseded where it describes immutable names or compile-time providers.
+Providers and models use stable D1 UUIDs. The supported server adapter registry owns provider membership and metadata. Official service APIs supply model identities. The design and API sources are in `docs/provider-model-sync.md`.
 
 Community reports for AI services, built for vibedetector.net. The supplied prototype defines the visual layout. Reports are not official status or evidence of a model change.
 
@@ -21,13 +21,11 @@ Reports contribute once per AI per fixed UTC hour. Category changes and undo app
 
 Model reporting is optional. The database catalogue supplies available models; `seeds/models.ts` preserves the initial list only. A model is metadata on the existing provider-level report, not a separate vote. Graph filters do not alter provider verdicts or baselines. Apply all local migrations after updating; model migrations preserve existing reports and expand provider support to Z.AI and Kimi. Production migrations still require approval.
 
-## Model administration
+## Catalogue administration
 
-Open `/admin` to add, archive/reactivate or reorder models. Move up/down controls save one order per provider. Archived models are hidden from public choices and named graph filters; stored reports still contribute to provider-wide activity until normal retention expires them. Names cannot be renamed or deleted. Set `ADMIN_KEY` as a Worker secret with at least 32 randomly generated characters, not a memorable password. Never put it in Wrangler vars or commit it. The panel is disabled if the secret or admin rate limiter is missing.
+Open `/admin` to view sync status and refresh API catalogues. Manual provider and model creation, editing, archival, and ordering are no longer supported. Archived models stay out of new choices and named graph filters; stored reports still contribute to provider-wide activity until normal retention expires them.
 
-Catalogues support up to 256 names per provider. New names append at the end; reorder controls persist immediately and affect both reporting and graph selectors.
-
-For local development, use an ignored `.dev.vars` file containing a test-only `ADMIN_KEY`. Production uses Wrangler's protected secret input. Key entry exchanges the key for a one-hour HttpOnly session; the panel never stores it in localStorage or URL parameters. Rotate the key to revoke existing sessions. The initial migration uses INSERT OR IGNORE; deployments do not reset your catalogue edits.
+Set `ADMIN_KEY` as a Worker secret with at least 32 random characters. Never put it in Wrangler vars or commit it. The panel is disabled if the secret or admin rate limiter is missing. For local development, use an ignored `.dev.vars` file containing a test-only key. Key entry exchanges the key for a one-hour HttpOnly session; the panel never stores it in localStorage or URL parameters. Rotate the key to revoke existing sessions.
 
 ## Gates
 
@@ -55,3 +53,15 @@ The rate-limit binding is configured in Wrangler. Reporting fails closed when pr
 Reporting protection is layered, not a guarantee of unique people. The edge limit is approximate and local to each Cloudflare location. Cookie clearing, multiple devices and distributed brigading remain possible. Enable Cloudflare managed WAF/bot rules appropriate to the account before launch, monitor rejected submissions and database usage, and adjust coarse limits if shared networks are affected.
 
 Architecture and delivery decisions are in `docs/architecture.md`. Live rows expire after eight days. Cloudflare backups and security logs have separate retention policies. Community reports cannot prove service health or unique humans.
+
+## Model catalogue sync
+
+The catalogue sync runs daily at 03:43 UTC and can be refreshed from the authenticated admin panel. It uses official server APIs with Worker-only secrets. Configure the provider keys in local development or as secret bindings in production. The sync lists models available to the configured account, not every consumer product label.
+
+Required secret bindings are `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `CURSOR_API_KEY`, and `MOONSHOT_API_KEY`. Each is optional independently. Missing keys show an unconfigured status and keep that provider's previous catalogue. Use API Platform credentials, not consumer subscriptions or Kimi Code keys. Cursor accepts a user Cloud Agents key or a service account key. Never prefix these secrets with `VITE_` or put them in Wrangler `vars`.
+
+Apply migration `0005_catalogue_sync.sql` through the normal approved deployment process before running the new Worker. This task does not deploy or apply production migrations. The migration preserves UUIDs and report fields while archiving Copilot, old Cursor and Z.AI choices, and unsupported manually created providers. Provider metadata and membership are code-owned by the supported adapter registry.
+
+Refreshes share a 60-second per-provider cooldown with the scheduled job. A 120-second lease fences overlapping runs. Model fetching has a 60-second deadline, a 100-page limit, a 5,000-model limit, and a 2 MB streamed limit per page. Invalid, empty, partial, duplicate, or failed results keep the previous catalogue. Successful complete results archive missing models. Changes to credentials, account access, or API region can therefore archive previously visible models. API IDs are not inferred from old consumer labels. Historical manual UUIDs remain archived instead of being reassigned.
+
+Cursor uses its official Cloud Agent model list. Z.AI remains provider-level reporting only because its official API documentation does not expose a model listing endpoint. Copilot is retired without deleting its providers, models, or reports. A failed or incomplete sync keeps the prior catalogue.

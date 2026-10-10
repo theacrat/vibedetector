@@ -33,30 +33,30 @@ test("report metadata persists independently of shareable chart filters", async 
       contentType: "application/javascript",
     });
   });
-  await page.goto("/copilot");
+  await page.goto("/claude");
   const reportModel = page.getByRole("combobox", { exact: true, name: "Report model" });
   const filter = page.getByRole("combobox", { name: "Filter reports by model" });
   const slow = page.getByRole("button", { name: /^slow/iu });
   const verify = page.getByRole("button", { name: "Verify test report" });
   await expect(reportModel).toBeEnabled();
   await expect(reportModel).toHaveValue("");
-  const solId = await selectedId(page, "Report model", "GPT-6.1 Sol");
+  const sonnetId = await selectedId(page, "Report model", "Claude Sonnet 5.5");
   const opusId = await selectedId(page, "Report model", "Claude Opus 5.5");
-  await reportModel.selectOption(solId);
+  await reportModel.selectOption(sonnetId);
   expect(writes).toEqual([]);
   await slow.click();
   await expect(verify).toBeVisible();
   await page.getByRole("button", { exact: true, name: "Cancel" }).click();
-  await expect(reportModel).toHaveValue(solId);
+  await expect(reportModel).toHaveValue(sonnetId);
   expect(writes).toEqual([]);
   await page.reload();
   await expect(reportModel).toHaveValue("");
-  await reportModel.selectOption(solId);
+  await reportModel.selectOption(sonnetId);
   await slow.click();
   await verify.click();
   await expect(slow).toHaveAttribute("aria-pressed", "true");
   await page.reload();
-  await expect(reportModel).toHaveValue(solId);
+  await expect(reportModel).toHaveValue(sonnetId);
   await reportModel.selectOption(opusId);
   await expect(page.locator(".hint")).toHaveText(
     "Choose a category to save the new model to your report.",
@@ -68,26 +68,31 @@ test("report metadata persists independently of shareable chart filters", async 
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(slow).toHaveAttribute("aria-pressed", "true");
   expect(writes).toMatchObject([
-    { category: "slow", model: solId },
+    { category: "slow", model: sonnetId },
     { category: "slow", model: opusId },
   ]);
   await page.reload();
   await expect(reportModel).toHaveValue(opusId);
-  const hourly = await page.locator(".sub").textContent();
+  const hourly = await page
+    .locator(".sub")
+    .filter({ hasText: "issue reports this hour" })
+    .textContent();
   const verdict = await page.locator(".verdict").textContent();
-  await filter.selectOption(solId);
-  await expect(page).toHaveURL(new RegExp(`model=${solId}`, "u"));
+  await filter.selectOption(sonnetId);
+  await expect(page).toHaveURL(new RegExp(`model=${sonnetId}`, "u"));
   await expect(
     page.getByText("Filtered reports; provider verdict uses all models.", { exact: false }),
   ).toBeVisible();
   await expect(reportModel).toHaveValue(opusId);
-  await expect(page.locator(".sub")).toHaveText(hourly ?? "");
+  await expect(page.locator(".sub").filter({ hasText: "issue reports this hour" })).toHaveText(
+    hourly ?? "",
+  );
   await expect(page.locator(".verdict")).toHaveText(verdict ?? "");
   await page.getByRole("button", { exact: true, name: "7d" }).click();
   await expect(page).toHaveURL(/range=7d/u);
-  await expect(filter).toHaveValue(solId);
+  await expect(filter).toHaveValue(sonnetId);
   await page.reload();
-  await expect(filter).toHaveValue(solId);
+  await expect(filter).toHaveValue(sonnetId);
   await expect(reportModel).toHaveValue(opusId);
   await slow.click();
   await expect(page.getByText("Verifying before removing your report.")).toBeVisible();
@@ -271,12 +276,17 @@ test("malformed public catalogue refresh retains the current dashboard and shows
   await expect(page.getByRole("combobox", { exact: true, name: "Report model" })).toBeEnabled();
   await expect(filter).toBeVisible();
   const options = await filter.locator("option").allTextContents();
-  const hourly = await page.locator(".sub").textContent();
+  const hourly = await page
+    .locator(".sub")
+    .filter({ hasText: "issue reports this hour" })
+    .textContent();
   await page.clock.fastForward(60_001);
   await expect(page.getByRole("alert")).toHaveText(
     "Live updates are unavailable. Please refresh to try again.",
   );
   expect(await filter.locator("option").allTextContents()).toEqual(options);
-  await expect(page.locator(".sub")).toHaveText(hourly ?? "");
+  await expect(page.locator(".sub").filter({ hasText: "issue reports this hour" })).toHaveText(
+    hourly ?? "",
+  );
   await expect(page.getByRole("heading", { name: "Couldn't load this page." })).toHaveCount(0);
 });
