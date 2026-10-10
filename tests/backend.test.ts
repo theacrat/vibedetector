@@ -4,18 +4,18 @@ import { afterAll, expect, test } from "bun:test";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 
 import { isId } from "@/domain";
-import type { ModelOption, Provider } from "@/domain";
+import type { ModelOption } from "@/domain";
 import { aggregate } from "@/server/aggregation";
 import { handleApi } from "@/server/api";
 import {
   loadActiveModels,
   loadModels,
   loadProviders,
-  orderCatalogue,
   parseProvider,
   resolveProvider,
 } from "@/server/catalogue";
-import { dashboardFromDatabase, overviewFromDatabase } from "@/server/queries";
+import type { SyncStatus } from "@/server/catalogue-sync";
+import { dashboardFromDatabase } from "@/server/queries";
 import { browserIdentity, challengeConfig, readJson, verifyChallenge } from "@/server/security";
 import { sitemap } from "@/server/sitemap";
 import { HOUR, loadReports, retainReports, saveReport, sessionReport } from "@/server/storage";
@@ -59,6 +59,7 @@ const migrations = [
   "0002_report_models.sql",
   "0003_model_catalogue.sql",
   "0004_catalogue_identities.sql",
+  "0005_catalogue_sync.sql",
 ];
 const initialProvider = {
   active: true,
@@ -100,7 +101,7 @@ async function database(legacy = false): Promise<D1Database> {
   );
   runtimes.push(runtime);
   const { DB: db } = await runtime.getBindings<{ DB: D1Database }>();
-  for (const filename of migrations.slice(0, legacy ? 3 : 4)) {
+  for (const filename of legacy ? migrations.slice(0, 3) : migrations) {
     // Schema versions must be applied in order.
     // oxlint-disable-next-line eslint/no-await-in-loop
     await migrate(db, filename);
@@ -217,7 +218,7 @@ test("migration fails atomically for unknown named metadata rather than nulling 
   ).toBeNull();
 });
 
-test("D1 UUID rename stability preserves filtering, deduplication and report restoration", async () => {
+test("D1 UUID identity preserves report restoration while registry provider metadata overrides historical edits", async () => {
   const db = await database();
   const model = await firstModel(db);
   const now = Math.floor(Date.now() / HOUR) * HOUR + 1000;
@@ -239,7 +240,8 @@ test("D1 UUID rename stability preserves filtering, deduplication and report res
     model.id,
   );
   expect(dashboard.model).toBe(model.id);
-  expect(dashboard.provider.name).toBe("Corrected provider name");
+  expect(dashboard.provider.name).toBe("Claude");
+  expect(dashboard.provider.slug).toBe("claude");
   expect(dashboard.models.find((entry) => entry.id === model.id)?.name).toBe(
     "Corrected model name",
   );
@@ -259,7 +261,7 @@ test("D1 UUID rename stability preserves filtering, deduplication and report res
     savedModel: { active: true, id: model.id, name: "Corrected model name", provider: CLAUDE },
   });
   const observed3 = await handleApi(request("/api/providers/claude"), bindings(db));
-  expect(observed3.status).toBe(404);
+  expect(observed3.status).toBe(200);
 });
 
 test("composite D1 ownership rejects cross-provider models even through direct SQL", async () => {
@@ -276,199 +278,149 @@ test("composite D1 ownership rejects cross-provider models even through direct S
   ).rejects.toThrow("FOREIGN KEY");
 });
 
-test("admin creates, renames, archives and restores providers and models without changing IDs", async () => {
+test("authenticated manual catalogue endpoints reject writes without changing the readonly catalogue", async () => {
   const db = await database();
   const cookie = await admin(db);
-  const providerInput = {
-    logo: "/logos/claude.svg",
-    maker: "New maker",
-    name: "New provider",
-    slug: "new-provider",
-    status: "https://status.example.com",
-    statusLabel: "Status page",
-  };
-  const created = await handleApi(
-    request("/api/admin/providers", providerInput, cookie),
-    bindings(db),
-  );
-  expect(created.status).toBe(200);
-  const providers = await loadProviders(db);
-  const provider = providers.find((entry: Provider) => entry.slug === "new-provider");
-  if (!provider) {
-    throw new Error("Missing created provider");
-  }
-  expect(isId(provider.id)).toBe(true);
-  const observed4 = await handleApi(
-    request("/api/admin/models", { name: "Generic model", provider: provider.id }, cookie),
-    bindings(db),
-  );
-  expect(observed4.status).toBe(200);
-  const model = await firstModel(db, provider.id);
-  const observed5 = await handleApi(
-    request("/api/admin/models/state", { active: false, id: model.id }, cookie),
-    bindings(db),
-  );
-  expect(observed5.status).toBe(200);
-  const observed6 = await handleApi(
-    request("/api/admin/models/update", { id: model.id, name: "Renamed model" }, cookie),
-    bindings(db),
-  );
-  expect(observed6.status).toBe(200);
-  expect(await loadModels(db, provider.id)).toEqual([
-    { active: false, id: model.id, name: "Renamed model", provider: provider.id },
-  ]);
-  const observed7 = await handleApi(
-    request(
-      "/api/admin/providers/update",
-      { ...providerInput, id: provider.id, name: "Renamed provider" },
-      cookie,
+  const env = bindings(db);
+  const beforeModels = await loadModels(db);
+  const beforeProviders = await loadProviders(db);
+  const responses = await Promise.all(
+    ["models", "providers"].flatMap((catalogue) =>
+      ["", "/update", "/state", "/order"].map(async (operation) =>
+        handleApi(
+          request(
+            `/api/admin/${catalogue}${operation}`,
+            {
+              ...initialProvider,
+              active: false,
+              ids: [CLAUDE],
+              name: "Changed",
+              provider: CLAUDE,
+            },
+            cookie,
+          ),
+          env,
+        ),
+      ),
     ),
-    bindings(db),
   );
-  expect(observed7.status).toBe(200);
-  const observed8 = await resolveProvider(db, provider.id);
-  expect(observed8.name).toBe("Renamed provider");
-  const observed9 = await handleApi(
-    request("/api/admin/providers/state", { active: false, id: provider.id }, cookie),
-    bindings(db),
+  expect(responses.map((response) => response.status)).toEqual(
+    Array.from({ length: 8 }, () => 404),
   );
-  expect(observed9.status).toBe(200);
-  await Promise.all(
-    ["providers", "models", "session", "reports"].map(async (route) => {
-      const response = await handleApi(
-        request(`/api/${route}/${provider.id}`, route === "reports" ? {} : undefined),
-        bindings(db),
-      );
-      expect(response.status).toBe(404);
-    }),
+  const modelsResponse = await handleApi(request("/api/admin/models", undefined, cookie), env);
+  const providersResponse = await handleApi(
+    request("/api/admin/providers", undefined, cookie),
+    env,
   );
-  expect(dashboardFromDatabase(db, provider.slug, "24h", Date.now())).rejects.toThrow(
-    "Unknown provider",
-  );
-  const observed10 = await overviewFromDatabase(db, Date.now());
-  expect(observed10.some((entry) => entry.provider.id === provider.id)).toBe(false);
-  const observed11 = await sitemap(db, "https://example.com/?a=1&b=2");
-  expect(observed11.text()).resolves.not.toContain("new-provider");
-  const observed12 = await loadModels(db, provider.id);
-  expect(observed12.length).toBe(1);
-  const observed13 = await handleApi(
-    request("/api/admin/providers/state", { active: true, id: provider.id }, cookie),
-    bindings(db),
-  );
-  expect(observed13.status).toBe(200);
-  const observed14 = await resolveProvider(db, provider.slug);
-  expect(observed14.id).toBe(provider.id);
+  expect(modelsResponse.status).toBe(200);
+  expect(providersResponse.status).toBe(200);
+  const modelRows: unknown = await modelsResponse.json();
+  const providerRows: unknown = await providersResponse.json();
+  expect(modelRows).toEqual(beforeModels);
+  expect(providerRows).toEqual(beforeProviders);
+  expect(modelsResponse.headers.get("Cache-Control")).toBe("no-store");
 });
 
-test("provider URLs and slugs reject unsafe values and duplicate display values return 409", async () => {
+test("admin sync reports missing credentials, provider-only scope and cooldown without mutating models", async () => {
   const db = await database();
   const cookie = await admin(db);
-  const provider = initialProvider;
-  if (!provider) {
-    throw new Error("Missing provider seed");
+  const env = bindings(db);
+  const before = await loadModels(db);
+  const response = await handleApi(request("/api/admin/sync", undefined, cookie), env);
+  expect(response.status).toBe(200);
+  const statuses = await response.json<SyncStatus[]>();
+  expect(statuses).toHaveLength(9);
+  expect(statuses.find((status) => status.provider === CLAUDE)).toEqual({
+    attemptedAt: 0,
+    configured: false,
+    modelCount: 0,
+    pending: false,
+    provider: CLAUDE,
+    scope: "Official API-discovered models available to the configured account",
+    status: "API key not configured",
+    succeededAt: 0,
+  });
+  expect(statuses.find((status) => status.status === "Provider reporting only")).toMatchObject({
+    configured: false,
+    pending: false,
+    scope: "Provider reporting only. No supported model listing API.",
+  });
+  const refresh = await handleApi(request("/api/admin/sync", { provider: CLAUDE }, cookie), env);
+  expect(refresh.status).toBe(200);
+  const refreshed = await refresh.json<SyncStatus[]>();
+  const attempted = refreshed.find((status) => status.provider === CLAUDE);
+  expect(attempted?.attemptedAt).toBeGreaterThan(0);
+  expect(attempted).toMatchObject({
+    pending: false,
+    status: "API key not configured",
+    succeededAt: 0,
+  });
+  const repeat = await handleApi(request("/api/admin/sync", { provider: CLAUDE }, cookie), env);
+  const repeated: unknown = await repeat.json();
+  expect(repeated).toEqual(refreshed);
+  const all = await handleApi(request("/api/admin/sync", {}, cookie), env);
+  expect(all.status).toBe(200);
+  expect(await all.json<SyncStatus[]>()).toHaveLength(9);
+  expect(await loadModels(db)).toEqual(before);
+});
+
+test("sync API authentication, CSRF, UUID validation and body limits fail closed", async () => {
+  const db = await database();
+  const env = bindings(db);
+  const cookie = await admin(db);
+  const oversized = { padding: "x".repeat(5000) };
+  const responses = await Promise.all([
+    handleApi(request("/api/admin/sync"), env),
+    handleApi(request("/api/admin/sync", {}), env),
+    handleApi(request("/api/admin/sync", {}, cookie, "https://attacker.com"), env),
+    handleApi(request("/api/admin/sync", { provider: "claude" }, cookie), env),
+    handleApi(
+      request("/api/admin/sync", { provider: "ffffffff-ffff-4fff-8fff-ffffffffffff" }, cookie),
+      env,
+    ),
+    handleApi(request("/api/admin/sync", oversized, cookie), env),
+  ]);
+  expect(responses.map((response) => response.status)).toEqual([401, 401, 403, 400, 404, 413]);
+});
+
+test("provider parsing rejects unsafe URLs and reserved or UUID-shaped slugs", () => {
+  expect(parseProvider({ ...initialProvider, logo: "" }).logo).toBe("");
+  for (const slug of [
+    "api",
+    "admin",
+    "privacy",
+    "methodology",
+    "robots.txt",
+    "sitemap.xml",
+    "UPPER",
+    "../escape",
+    "abcdefab-0000-4000-8000-000000000001",
+    "abcdefab-cdef-0abc-8abc-abcdefabcdef",
+    "abcdefab-cdef-fabc-0abc-abcdefabcdef",
+  ]) {
+    expect(() => parseProvider({ ...initialProvider, slug })).toThrow();
   }
-  expect(parseProvider({ ...provider, logo: "" }).logo).toBe("");
-  await Promise.all(
-    [
-      "api",
-      "admin",
-      "privacy",
-      "methodology",
-      "robots.txt",
-      "sitemap.xml",
-      "UPPER",
-      "../escape",
-      "abcdefab-0000-4000-8000-000000000001",
-      "abcdefab-cdef-0abc-8abc-abcdefabcdef",
-      "abcdefab-cdef-fabc-0abc-abcdefabcdef",
-    ].map(async (slug) => {
-      const observed15 = await handleApi(
-        request("/api/admin/providers", { ...provider, slug }, cookie),
-        bindings(db),
-      );
-      expect(observed15.status).toBe(400);
-    }),
-  );
   expect(() =>
-    parseProvider({ ...provider, status: ["javascript", "alert(1)"].join(":") }),
+    parseProvider({ ...initialProvider, status: ["javascript", "alert(1)"].join(":") }),
   ).toThrow();
-  expect(() => parseProvider({ ...provider, logo: "/logos/../private.svg" })).toThrow();
-  expect(() => parseProvider({ ...provider, logo: "http://example.com/logo.svg" })).toThrow();
-  const observed16 = await handleApi(
-    request("/api/admin/providers", provider, cookie),
-    bindings(db),
-  );
-  expect(observed16.status).toBe(409);
-  const model = await firstModel(db);
-  const observed17 = await handleApi(
-    request("/api/admin/models", { name: model.name, provider: CLAUDE }, cookie),
-    bindings(db),
-  );
-  expect(observed17.status).toBe(409);
+  expect(() => parseProvider({ ...initialProvider, logo: "/logos/../private.svg" })).toThrow();
+  expect(() =>
+    parseProvider({ ...initialProvider, logo: "http://example.com/logo.svg" }),
+  ).toThrow();
 });
 
 test("UUID lookup cannot be shadowed by a legacy slug or bypass provider archival", async () => {
   const db = await database();
-  const target = "abcdefab-0000-4000-8000-000000000001";
-  await db
-    .prepare(
-      "INSERT INTO providers SELECT ?, 'target-provider', name, maker, status, statusLabel, logo, 1, 10 FROM providers WHERE id = ?",
-    )
-    .bind(target, CLAUDE)
-    .run();
-  await db.prepare("UPDATE providers SET slug = ? WHERE id = ?").bind(target, CHATGPT).run();
-  expect(await resolveProvider(db, target)).toMatchObject({ id: target, slug: "target-provider" });
+  const target = CHATGPT;
+  await db.prepare("UPDATE providers SET slug = 'target-provider' WHERE id = ?").bind(target).run();
+  await db.prepare("UPDATE providers SET slug = ? WHERE id = ?").bind(target, CLAUDE).run();
+  expect(await resolveProvider(db, target)).toMatchObject({ id: target, slug: "chatgpt" });
   await db.prepare("UPDATE providers SET active = 0 WHERE id = ?").bind(target).run();
   const response = await handleApi(request(`/api/providers/${target}`), bindings(db));
   expect(response.status).toBe(404);
   expect(resolveProvider(db, target)).rejects.toThrow("Unknown provider");
   const archived = await resolveProvider(db, target, false);
   expect(archived.id).toBe(target);
-});
-
-test("atomic full-ID orders include archived records, competing orders and append safely", async () => {
-  const db = await database();
-  const models = await loadModels(db, CLAUDE);
-  const ids = models.map((model) => model.id);
-  const reverse = ids.toReversed();
-  await db.prepare("UPDATE models SET active = 0 WHERE id = ?").bind(ids[0]).run();
-  await orderCatalogue(db, { ids: reverse, provider: CLAUDE }, "models");
-  const observed18 = await loadModels(db, CLAUDE);
-  expect(observed18.map((model) => model.id)).toEqual(reverse);
-  expect(orderCatalogue(db, { ids: reverse.slice(1), provider: CLAUDE }, "models")).rejects.toThrow(
-    "Catalogue changed",
-  );
-  expect(
-    orderCatalogue(db, { ids: [ids[0], ids[0]], provider: CLAUDE }, "models"),
-  ).rejects.toThrow();
-  await Promise.all([
-    orderCatalogue(db, { ids, provider: CLAUDE }, "models"),
-    orderCatalogue(db, { ids: reverse, provider: CLAUDE }, "models"),
-  ]);
-  const observed19 = await loadModels(db, CLAUDE);
-  expect([ids, reverse]).toContainEqual(observed19.map((model) => model.id));
-  const cookie = await admin(db);
-  const observed20 = await handleApi(
-    request("/api/admin/models", { name: "Appended", provider: CLAUDE }, cookie),
-    bindings(db),
-  );
-  expect(observed20.status).toBe(200);
-  const observed21 = await loadModels(db, CLAUDE);
-  expect(observed21[0]?.name).toBe("Appended");
-  const observed22 = await loadProviders(db);
-  const providers = observed22.map((provider) => provider.id).toReversed();
-  await orderCatalogue(db, { ids: providers }, "providers");
-  const observed23 = await loadProviders(db);
-  expect(observed23.map((provider) => provider.id)).toEqual(
-    observed22.map((provider) => provider.id),
-  );
-  const oversized = new Request("http://localhost/api/admin/providers/order", {
-    body: " ".repeat(262_145),
-    headers: { "Content-Type": "application/json", Cookie: cookie, Origin: "http://localhost" },
-    method: "POST",
-  });
-  const observed24 = await handleApi(oversized, bindings(db));
-  expect(observed24.status).toBe(413);
 });
 
 test("archive model exception stays scoped to saved identity, provider, hour and retraction state", async () => {
@@ -645,7 +597,7 @@ test("security validates identity cookies, body bounds, challenge hostname and a
   expect(() => challengeConfig(bindings(db), "example.com")).toThrow("Reporting is not configured");
 });
 
-test("dynamic sitemap uses escaped active slugs and follows rename", async () => {
+test("dynamic sitemap escapes URLs and uses active registry slugs despite historical edits", async () => {
   const db = await database();
   await db.prepare("UPDATE providers SET slug = 'corrected-slug' WHERE id = ?").bind(CLAUDE).run();
   await db.prepare("UPDATE providers SET active = 0 WHERE id = ?").bind(CHATGPT).run();
@@ -653,8 +605,8 @@ test("dynamic sitemap uses escaped active slugs and follows rename", async () =>
   expect(response.headers.get("Content-Type")).toContain("application/xml");
   const xml = await response.text();
   expect(xml).toContain("&amp;");
-  expect(xml).toContain("corrected-slug");
-  expect(xml).not.toContain("/claude</loc>");
+  expect(xml).not.toContain("corrected-slug");
+  expect(xml).toContain("/claude</loc>");
   expect(xml).not.toContain("/chatgpt</loc>");
 });
 
@@ -701,54 +653,6 @@ test("retention uses the UUID dedup keys and drains more than one bounded batch"
   expect(await db.prepare("SELECT identity_hash FROM reports").all()).toMatchObject({
     results: [{ identity_hash: "current" }],
   });
-});
-
-test("catalogue limits, duplicate names and streamed body limits are enforced at the API boundary", async () => {
-  const db = await database();
-  const cookie = await admin(db);
-  const existing = await firstModel(db);
-  const observed1 = await handleApi(
-    request("/api/admin/models", { name: existing.name, provider: existing.provider }, cookie),
-    bindings(db),
-  );
-  expect(observed1.status).toBe(409);
-  const createdNames = Array.from({ length: 250 }, (_value, index) => `Cap model ${index}`);
-  const responses = await Promise.all(
-    createdNames.map(async (name) =>
-      handleApi(request("/api/admin/models", { name, provider: CLAUDE }, cookie), bindings(db)),
-    ),
-  );
-  expect(responses.filter((response) => response.status === 200)).toHaveLength(250);
-  const observed2 = await loadModels(db, CLAUDE);
-  expect(observed2.length).toBe(256);
-  const capped = await handleApi(
-    request("/api/admin/models", { name: "Over cap", provider: CLAUDE }, cookie),
-    bindings(db),
-  );
-  expect(capped.status).toBe(400);
-  const smallBody = new Request("http://localhost/api/admin/models", {
-    body: new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode('{"name":"Streamed"'));
-        controller.enqueue(new TextEncoder().encode(",".repeat(17_000)));
-        controller.close();
-      },
-    }),
-    headers: { "Content-Type": "application/json", Cookie: cookie, Origin: "http://localhost" },
-    method: "POST",
-  });
-  const observed3 = await handleApi(smallBody, bindings(db));
-  expect(observed3.status).toBe(413);
-  const observed4 = await loadModels(db, CLAUDE);
-  const largeOrder = new Request("http://localhost/api/admin/models/order", {
-    body:
-      JSON.stringify({ ids: observed4.map((model) => model.id), provider: CLAUDE }) +
-      " ".repeat(262_145),
-    headers: { "Content-Type": "application/json", Cookie: cookie, Origin: "http://localhost" },
-    method: "POST",
-  });
-  const observed5 = await handleApi(largeOrder, bindings(db));
-  expect(observed5.status).toBe(413);
 });
 
 test("actual Miniflare Worker transport signs admin sessions and returns UUID catalogue rows", async () => {
@@ -865,41 +769,6 @@ test("admin rate limits, configuration, future signatures, expiry, rotation and 
   expect(secure.headers.get("Set-Cookie")).toContain("Secure");
 });
 
-test("concurrent provider creation stops at 256 and stale orders never change positions", async () => {
-  const db = await database();
-  await db
-    .prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 245)
-    INSERT INTO providers SELECT '20000000-0000-4000-8000-' || printf('%012d', i), 'cap-provider-' || i, 'Cap provider ' || i, 'Maker', 'https://example.com', 'Status', '/logos/claude.svg', 1, i + 10 FROM n`)
-    .run();
-  const cookie = await admin(db);
-  const responses = await Promise.all(
-    ["racing-a", "racing-b"].map(async (slug) =>
-      handleApi(
-        request("/api/admin/providers", { ...initialProvider, slug }, cookie),
-        bindings(db),
-      ),
-    ),
-  );
-  const responseStatuses = responses
-    .map((response) => response.status)
-    .toSorted((left, right) => left - right);
-  expect(responseStatuses).toEqual([200, 400]);
-  const providers = await loadProviders(db);
-  expect(providers).toHaveLength(256);
-  const staleIds = providers
-    .slice(1)
-    .map((provider) => provider.id)
-    .toReversed();
-  const attempt = orderCatalogue(db, { ids: staleIds }, "providers");
-  expect(attempt).rejects.toThrow("Catalogue changed");
-  const after = await loadProviders(db);
-  expect(after.map((provider) => provider.id)).toEqual(providers.map((provider) => provider.id));
-  const positions = await db
-    .prepare("SELECT position FROM providers ORDER BY position")
-    .all<{ position: number }>();
-  expect(new Set(positions.results.map((row) => row.position)).size).toBe(256);
-});
-
 test("streaming JSON enforces byte limits and media type without trusting Content-Length", () => {
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -1006,47 +875,6 @@ test("session exposes renamed archived saved metadata only for its owner and pro
   expect(otherBody).not.toHaveProperty("savedModel");
   const catalogue = await loadActiveModels(db, CLAUDE);
   expect(catalogue.some((entry) => entry.id === model.id)).toBe(false);
-});
-
-test("provider and model display updates retain archive state, ordering and immutable ownership", async () => {
-  const db = await database();
-  const cookie = await admin(db);
-  const model = await firstModel(db);
-  await db.prepare("UPDATE models SET active = 0, position = 71 WHERE id = ?").bind(model.id).run();
-  await db
-    .prepare("UPDATE providers SET active = 0, position = 72 WHERE id = ?")
-    .bind(CLAUDE)
-    .run();
-  const modelUpdate = await handleApi(
-    request(
-      "/api/admin/models/update",
-      { active: true, id: model.id, name: "New model display", position: 0, provider: CHATGPT },
-      cookie,
-    ),
-    bindings(db),
-  );
-  expect(modelUpdate.status).toBe(200);
-  const providerUpdate = await handleApi(
-    request(
-      "/api/admin/providers/update",
-      { ...initialProvider, active: true, name: "New provider display", position: 0 },
-      cookie,
-    ),
-    bindings(db),
-  );
-  expect(providerUpdate.status).toBe(200);
-  expect(
-    await db
-      .prepare("SELECT active, position, provider FROM models WHERE id = ?")
-      .bind(model.id)
-      .first<{ active: number; position: number; provider: string }>(),
-  ).toEqual({ active: 0, position: 71, provider: CLAUDE });
-  expect(
-    await db
-      .prepare("SELECT active, position FROM providers WHERE id = ?")
-      .bind(CLAUDE)
-      .first<{ active: number; position: number }>(),
-  ).toEqual({ active: 0, position: 72 });
 });
 
 test("report API missing IP and limiter cannot mutate persisted UUID report state", async () => {
