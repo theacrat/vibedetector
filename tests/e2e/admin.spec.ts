@@ -301,6 +301,7 @@ test("legacy new-provider route is a sync view without a creation form", async (
     });
   });
   await page.goto("/admin/providers/new");
+  await expect(page).toHaveURL("/admin");
   await expect(page.getByRole("heading", { name: "Catalogue sync" })).toBeVisible();
   await expect(
     page.getByRole("button", { exact: true, name: "Refresh all providers" }),

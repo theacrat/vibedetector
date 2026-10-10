@@ -336,7 +336,8 @@ test("admin sync reports missing credentials, provider-only scope and cooldown w
     modelCount: 0,
     pending: false,
     provider: CLAUDE,
-    scope: "Official API-discovered models available to the configured account",
+    scope:
+      "Official API-discovered models available to the configured account. Not an exhaustive consumer catalogue.",
     status: "API key not configured",
     succeededAt: 0,
   });
