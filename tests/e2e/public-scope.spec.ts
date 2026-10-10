@@ -14,6 +14,8 @@ test("unauthenticated model choices disclose official catalogue scope", async ({
   ).toBeVisible();
   await page.goto("/zai");
   await expect(
-    page.getByText("Provider reporting only. No supported model listing API.", { exact: true }),
+    page.getByText("Official API-discovered models available to the configured account.", {
+      exact: true,
+    }),
   ).toBeVisible();
 });

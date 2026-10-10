@@ -12,6 +12,7 @@ declare global {
       DEEPSEEK_API_KEY?: string;
       CURSOR_API_KEY?: string;
       MOONSHOT_API_KEY?: string;
+      ZAI_API_KEY?: string;
     }
   }
 }

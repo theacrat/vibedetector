@@ -23,6 +23,7 @@ import { HOUR, loadReports, retainReports, saveReport, sessionReport } from "@/s
 const runtimes: Miniflare[] = [];
 const CLAUDE = "10000000-0000-4000-8000-000000000001";
 const CHATGPT = "10000000-0000-4000-8000-000000000002";
+const ZAI = "10000000-0000-4000-8000-000000000009";
 const SECRET = "test-admin-secret-that-is-at-least-32-characters";
 async function allowLimit(): Promise<{ success: boolean }> {
   await Promise.resolve();
@@ -321,7 +322,7 @@ test("authenticated manual catalogue endpoints reject writes without changing th
   expect(modelsResponse.headers.get("Cache-Control")).toBe("no-store");
 });
 
-test("admin sync reports missing credentials, provider-only scope and cooldown without mutating models", async () => {
+test("admin sync reports missing credentials and cooldown without mutating models", async () => {
   const db = await database();
   const cookie = await admin(db);
   const env = bindings(db);
@@ -341,10 +342,11 @@ test("admin sync reports missing credentials, provider-only scope and cooldown w
     status: "API key not configured",
     succeededAt: 0,
   });
-  expect(statuses.find((status) => status.status === "Provider reporting only")).toMatchObject({
+  expect(statuses.find((status) => status.provider === ZAI)).toMatchObject({
     configured: false,
     pending: false,
-    scope: "Provider reporting only. No supported model listing API.",
+    scope: "Official API-discovered models available to the configured account.",
+    status: "API key not configured",
   });
   const refresh = await handleApi(request("/api/admin/sync", { provider: CLAUDE }, cookie), env);
   expect(refresh.status).toBe(200);

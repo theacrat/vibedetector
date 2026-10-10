@@ -291,8 +291,8 @@ test("refresh waits for authoritative catalogue and failure keeps previous rows"
 test("legacy new-provider route is a sync view without a creation form", async ({ page }) => {
   const statuses = initialStatuses.map((status) => ({
     ...status,
-    scope: "Provider reporting only. No supported model listing API.",
-    status: "Provider reporting only",
+    scope: "Official API-discovered models available to the configured account.",
+    status: "API key not configured",
   }));
   await page.route("**/api/admin/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -306,7 +306,13 @@ test("legacy new-provider route is a sync view without a creation form", async (
   await expect(
     page.getByRole("button", { exact: true, name: "Refresh all providers" }),
   ).toBeEnabled();
-  await expect(page.getByText("Provider reporting only", { exact: true }).first()).toBeVisible();
+  await expect(
+    page
+      .getByText("Official API-discovered models available to the configured account.", {
+        exact: true,
+      })
+      .first(),
+  ).toBeVisible();
   await expect(page.getByLabel("Provider name", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { exact: true, name: "Add provider" })).toHaveCount(0);
 });

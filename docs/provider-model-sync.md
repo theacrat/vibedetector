@@ -14,9 +14,9 @@ Sources checked on 10 October 2026:
 - [DeepSeek](https://api-docs.deepseek.com/api/list-models) lists `data[].id` at `https://api.deepseek.com/models`. No pagination is documented.
 - [Kimi](https://platform.kimi.ai/docs/api/list-models.md) lists `data[].id` at `https://api.moonshot.ai/v1/models`. No pagination is documented. API Platform credentials are distinct from Kimi Code and consumer credentials.
 - [Cursor](https://cursor.com/docs/cloud-agent/api/endpoints) lists `items[].id` and `displayName` at `https://api.cursor.com/v1/models`. These are recommended Cloud Agent models, not the complete IDE catalogue. The endpoint has no documented pagination.
-- [Z.AI's official OpenAPI](https://docs.z.ai/openapi.json) and [documentation index](https://docs.z.ai/llms.txt) contain no model listing endpoint. OpenAI compatibility does not prove that `/models` exists.
+- Z.AI's API Platform exposes `GET https://api.z.ai/api/paas/v4/models`, returning an OpenAI-compatible `data` list. This endpoint was verified with an API key on 2026-10-11. The configured account determines which models are returned.
 
-The user chose to keep Cursor with an explicit Cloud Agent catalogue label and keep Z.AI for provider-level reporting without model choices. Archive their old manual choices at migration. Retire Copilot's provider and models without deleting rows or reports.
+The user chose to keep Cursor with an explicit Cloud Agent catalogue label and add Z.AI's API Platform catalogue. Archive old manual choices at migration. Retire Copilot's provider and models without deleting rows or reports.
 
 ## Data and ownership
 

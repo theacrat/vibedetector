@@ -11,7 +11,8 @@ type ModelSecret =
   | "MISTRAL_API_KEY"
   | "DEEPSEEK_API_KEY"
   | "CURSOR_API_KEY"
-  | "MOONSHOT_API_KEY";
+  | "MOONSHOT_API_KEY"
+  | "ZAI_API_KEY";
 interface ModelAdapter {
   endpoint: string;
   secret: ModelSecret;
@@ -59,6 +60,11 @@ const adapters: Record<string, ModelAdapter> = {
     endpoint: "https://api.mistral.ai/v1/models",
     protocol: "list",
     secret: "MISTRAL_API_KEY",
+  },
+  zai: {
+    endpoint: "https://api.z.ai/api/paas/v4/models",
+    protocol: "list",
+    secret: "ZAI_API_KEY",
   },
 };
 
