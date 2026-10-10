@@ -55,3 +55,9 @@ The rate-limit binding is configured in Wrangler. Reporting fails closed when pr
 Reporting protection is layered, not a guarantee of unique people. The edge limit is approximate and local to each Cloudflare location. Cookie clearing, multiple devices and distributed brigading remain possible. Enable Cloudflare managed WAF/bot rules appropriate to the account before launch, monitor rejected submissions and database usage, and adjust coarse limits if shared networks are affected.
 
 Architecture and delivery decisions are in `docs/architecture.md`. Live rows expire after eight days. Cloudflare backups and security logs have separate retention policies. Community reports cannot prove service health or unique humans.
+
+## Model catalogue sync
+
+The catalogue sync runs daily at 03:43 UTC and can be refreshed from the authenticated admin panel. It uses official server APIs with Worker-only secrets. Configure the provider keys in local development or as secret bindings in production. The sync lists models available to the configured account, not every consumer product label.
+
+Cursor uses its official Cloud Agent model list. Z.AI remains provider-level reporting only because its official API documentation does not expose a model listing endpoint. Copilot is retired without deleting its providers, models, or reports. A failed or incomplete sync keeps the prior catalogue.

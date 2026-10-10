@@ -2,6 +2,7 @@ import { isId } from "@/domain";
 import type { ModelOption, Provider } from "@/domain";
 import { compareProviders } from "@/provider-order";
 
+import { providerRegistry } from "./provider-registry";
 import { ApiError } from "./security";
 
 const localLogos = new Set(
@@ -24,7 +25,7 @@ function isModelName(value: unknown): value is string {
   return (
     typeof value === "string" &&
     value.length > 0 &&
-    value.length <= 120 &&
+    value.length <= 700 &&
     value === value.trim() &&
     !/[\p{Cc}]/u.test(value)
   );
@@ -123,7 +124,13 @@ async function loadProviders(db: D1Database, activeOnly = false): Promise<Provid
   if (!result.success) {
     throw new Error("Catalogue read failed");
   }
-  return result.results.map(readProvider).toSorted(compareProviders);
+  return result.results
+    .map(readProvider)
+    .filter(
+      (provider) =>
+        !activeOnly || providerRegistry.some((entry) => entry.provider.id === provider.id),
+    )
+    .toSorted(compareProviders);
 }
 
 async function resolveProvider(
@@ -140,7 +147,11 @@ async function resolveProvider(
   if (!row) {
     throw new ApiError(404, "Unknown provider");
   }
-  return readProvider(row);
+  const provider = readProvider(row);
+  if (activeOnly && !providerRegistry.some((entry) => entry.provider.id === provider.id)) {
+    throw new ApiError(404, "Unknown provider");
+  }
+  return provider;
 }
 
 async function loadModels(

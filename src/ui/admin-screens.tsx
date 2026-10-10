@@ -1,142 +1,158 @@
-import { Link, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef } from "react";
-
-import type { Provider } from "@/domain";
-import { compareProviders } from "@/provider-order";
+import { Link } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { AdminScreen } from "./admin";
-import { AdminCatalogue, AdminLogin } from "./admin-catalogue";
+import { AdminLogin } from "./admin-catalogue";
 import type { AdminState } from "./admin-data";
-import { ProviderForm } from "./provider-admin";
+import { requestJson } from "./data";
 
-function SignOut({ state }: { state: AdminState }) {
-  const logout = useCallback(() => {
-    void state.run("/api/admin/logout");
-  }, [state]);
-  return (
-    <button className="plain-button" disabled={state.pending} type="button" onClick={logout}>
-      Sign out
-    </button>
-  );
+interface SyncStatus {
+  provider: string;
+  scope: string;
+  succeededAt: number;
+  modelCount: number;
+  status: string;
+  pending: boolean;
 }
 
-function ProviderEditor({ state, providerId }: { state: AdminState; providerId: string }) {
-  const provider = state.providers.find((entry) => entry.id === providerId);
-  const toggle = useCallback(() => {
-    if (provider) {
-      void state.run("/api/admin/providers/state", { active: !provider.active, id: provider.id });
+function parseSyncStatuses(value: unknown): SyncStatus[] {
+  if (!Array.isArray(value)) {
+    throw new TypeError("Invalid sync status");
+  }
+  return value.map((row: unknown) => {
+    if (
+      !row ||
+      typeof row !== "object" ||
+      !("provider" in row) ||
+      typeof row.provider !== "string" ||
+      !("scope" in row) ||
+      typeof row.scope !== "string" ||
+      !("succeededAt" in row) ||
+      typeof row.succeededAt !== "number" ||
+      !("modelCount" in row) ||
+      typeof row.modelCount !== "number" ||
+      !("status" in row) ||
+      typeof row.status !== "string" ||
+      !("pending" in row) ||
+      typeof row.pending !== "boolean"
+    ) {
+      throw new TypeError("Invalid sync status");
     }
-  }, [provider, state]);
-  return (
-    <>
-      <div className="admin-heading">
-        <Link to="/admin">All providers</Link>
-        <SignOut state={state} />
-      </div>
-      {provider ? (
-        <>
-          <AdminCatalogue state={state} selectedProvider={provider} />
-          <section className="admin-panel admin-settings">
-            <h2>Provider settings</h2>
-            <ProviderForm provider={provider} state={state} key={provider.id} />
-            <p className="admin-help">
-              Archiving a provider hides it from new reports. Existing reports are kept.
-            </p>
-            <button
-              id={`provider-state-${provider.id}`}
-              className="plain-button"
-              type="button"
-              disabled={state.pending}
-              onClick={toggle}
-            >
-              {provider.active ? "Archive" : "Reactivate"} provider {provider.name}
-            </button>
-          </section>
-        </>
-      ) : (
-        <section className="admin-panel">
-          <p>Provider not found. Check the link or return to all providers.</p>
-        </section>
-      )}
-    </>
-  );
+    return {
+      modelCount: row.modelCount,
+      pending: row.pending,
+      provider: row.provider,
+      scope: row.scope,
+      status: row.status,
+      succeededAt: row.succeededAt,
+    };
+  });
 }
 
-function ProviderListRow({ provider }: { provider: Provider }) {
-  const params = useMemo(() => ({ provider: provider.id }), [provider.id]);
+function SyncRow({
+  status,
+  state,
+  expanded,
+}: {
+  status: SyncStatus;
+  state: AdminState;
+  expanded: boolean;
+}) {
+  const params = useMemo(() => ({ provider: status.provider }), [status.provider]);
+  const provider = state.providers.find((entry) => entry.id === status.provider);
   return (
     <li>
-      <div className="admin-provider-summary">
-        <span>
-          <b>{provider.name}</b>
-          <small>{provider.active ? "Active" : "Archived"}</small>
-        </span>
-        <Link
-          className="plain-button"
-          aria-label={`Edit ${provider.name}`}
-          to="/admin/providers/$provider"
-          params={params}
-        >
-          Edit
-        </Link>
-      </div>
+      <h3>{provider?.name ?? "Provider"}</h3>
+      <p>{status.scope}</p>
+      <p>{status.pending ? "Syncing" : status.status}</p>
+      <p>
+        Last success: {status.succeededAt ? new Date(status.succeededAt).toLocaleString() : "Never"}
+        . Models: {status.modelCount}.
+      </p>
+      <Link to="/admin/providers/$provider" params={params}>
+        View catalogue
+      </Link>
+      {expanded && (
+        <ul>
+          {state.models
+            ?.filter((model) => model.provider === status.provider)
+            .map((model) => (
+              <li key={model.id}>
+                {model.name}
+                {model.active ? "" : " (archived)"}
+              </li>
+            ))}
+        </ul>
+      )}
     </li>
   );
 }
 
-function ProviderList({ state }: { state: AdminState }) {
-  const providers = useMemo(() => state.providers.toSorted(compareProviders), [state.providers]);
-  return (
-    <section className="admin-panel" aria-labelledby="providers-title">
-      <div className="admin-heading">
-        <h2 id="providers-title">Provider catalogue</h2>
-        <SignOut state={state} />
-      </div>
-      <p>Choose a provider to edit its details and manage its models.</p>
-      <Link className="plain-button" to="/admin/providers/new">
-        Add provider
-      </Link>
-      <ul className="admin-providers">
-        {providers.map((provider) => (
-          <ProviderListRow key={provider.id} provider={provider} />
-        ))}
-      </ul>
-    </section>
-  );
+function useSyncStatus(pending: boolean) {
+  const [statuses, setStatuses] = useState<SyncStatus[]>([]);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (pending) {
+      return;
+    }
+    let mounted = true;
+    async function load() {
+      try {
+        const result = parseSyncStatuses(await requestJson<unknown>("/api/admin/sync"));
+        if (mounted) {
+          setStatuses(result);
+          setError("");
+        }
+      } catch {
+        if (mounted) {
+          setError("Could not load sync status.");
+        }
+      }
+    }
+    void load();
+    return () => {
+      mounted = false;
+    };
+  }, [pending]);
+  return { error, statuses };
 }
 
-function ProviderCreation({ state }: { state: AdminState }) {
-  const navigate = useNavigate();
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  const created = useCallback(
-    (provider: Provider) => {
-      if (mounted.current) {
-        void navigate({
-          params: { provider: provider.id },
-          state: { savedProvider: provider },
-          to: "/admin/providers/$provider",
-        });
-      }
-    },
-    [navigate],
-  );
+function SyncPanel({ state, providerId }: { state: AdminState; providerId: string | undefined }) {
+  const { error, statuses } = useSyncStatus(state.pending);
+  const refresh = useCallback(() => {
+    void state.run("/api/admin/sync", providerId ? { provider: providerId } : {});
+  }, [providerId, state]);
+  const logout = useCallback(() => {
+    void state.run("/api/admin/logout");
+  }, [state]);
+  const refreshLabel = providerId ? "Refresh provider" : "Refresh all providers";
   return (
-    <>
+    <section className="admin-panel" aria-labelledby="catalogue-title">
       <div className="admin-heading">
-        <Link to="/admin">All providers</Link>
-        <SignOut state={state} />
+        <h2 id="catalogue-title">Catalogue sync</h2>
+        <button className="plain-button" type="button" disabled={state.pending} onClick={logout}>
+          Sign out
+        </button>
       </div>
-      <section className="admin-panel">
-        <h2>Provider details</h2>
-        <ProviderForm state={state} onCreated={created} />
-      </section>
-    </>
+      <p>Official API-discovered models. These are not exhaustive consumer product catalogues.</p>
+      {providerId && <Link to="/admin">All providers</Link>}
+      <button className="plain-button" type="button" disabled={state.pending} onClick={refresh}>
+        {state.pending ? "Refreshing..." : refreshLabel}
+      </button>
+      {error && <p role="alert">{error}</p>}
+      <ul className="admin-providers">
+        {statuses
+          .filter((status) => !providerId || status.provider === providerId)
+          .map((status) => (
+            <SyncRow
+              key={status.provider}
+              status={status}
+              state={state}
+              expanded={Boolean(providerId)}
+            />
+          ))}
+      </ul>
+    </section>
   );
 }
 
@@ -144,17 +160,9 @@ function AdminScreens({ state, screen }: { state: AdminState; screen: AdminScree
   if (!state.models) {
     return <AdminLogin state={state} />;
   }
-  switch (screen.kind) {
-    case "edit": {
-      return <ProviderEditor state={state} providerId={screen.providerId} />;
-    }
-    case "new": {
-      return <ProviderCreation state={state} />;
-    }
-    case "list": {
-      return <ProviderList state={state} />;
-    }
-  }
+  return (
+    <SyncPanel state={state} providerId={screen.kind === "edit" ? screen.providerId : undefined} />
+  );
 }
 
 export { AdminScreens };

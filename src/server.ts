@@ -1,6 +1,7 @@
 import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server";
 
 import { handleApi } from "./server/api";
+import { syncCatalogue } from "./server/catalogue-sync";
 import { sitemap } from "./server/sitemap";
 import { retainReports } from "./server/storage";
 
@@ -17,7 +18,9 @@ export default {
     }
     return start(request);
   },
-  async scheduled(_controller, env) {
-    await retainReports(env.DB, Date.now());
+  async scheduled(controller, env) {
+    await (controller.cron === "43 3 * * *"
+      ? syncCatalogue(env)
+      : retainReports(env.DB, Date.now()));
   },
 } satisfies ExportedHandler<Cloudflare.Env>;
