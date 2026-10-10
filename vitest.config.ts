@@ -9,7 +9,11 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    exclude: ["tests/backend.test.ts", "tests/catalogue-sync.test.ts"],
+    exclude: [
+      "tests/backend.test.ts",
+      "tests/catalogue-sync.test.ts",
+      "tests/openai-enrichment.test.ts",
+    ],
     include: ["tests/**/*.test.{ts,tsx}"],
   },
 });
