@@ -55,6 +55,22 @@ async function syncStatus(bindings: SyncBindings): Promise<SyncStatus[]> {
   });
 }
 
+async function orderedCatalogue(db: D1Database, provider: string, models: ExternalModel[]) {
+  const existing = await db
+    .prepare("SELECT external_id, first_seen_at FROM models WHERE provider = ?")
+    .bind(provider)
+    .all<{ external_id: string; first_seen_at: number }>();
+  const firstSeen = new Map(existing.results.map((row) => [row.external_id, row.first_seen_at]));
+  const now = Date.now();
+  return models
+    .map((model) => ({ ...model, firstSeenAt: firstSeen.get(model.id) ?? now }))
+    .toSorted(
+      (left, right) =>
+        (right.metadata?.releasedAt ?? right.firstSeenAt) -
+          (left.metadata?.releasedAt ?? left.firstSeenAt) || left.id.localeCompare(right.id, "en"),
+    );
+}
+
 async function applyCatalogue(
   db: D1Database,
   provider: string,
@@ -63,21 +79,28 @@ async function applyCatalogue(
 ): Promise<void> {
   const fence =
     "EXISTS (SELECT 1 FROM catalogue_sync WHERE provider = ? AND lease = ? AND lease_until > unixepoch('subsec') * 1000)";
-  const encoded = JSON.stringify(models.map((model) => ({ ...model, uuid: crypto.randomUUID() })));
+  const ordered = await orderedCatalogue(db, provider, models);
+  const encoded = JSON.stringify(
+    ordered.map((model) => ({
+      ...model,
+      active: model.metadata?.reasons.length ? 0 : 1,
+      uuid: crypto.randomUUID(),
+    })),
+  );
   await db.batch([
     db
       .prepare(`INSERT INTO catalogue_sync_guard SELECT CASE WHEN ${fence} THEN 1 ELSE 0 END`)
       .bind(provider, lease),
     db
-      .prepare(`INSERT INTO models (id, provider, name, active, position, external_id)
+      .prepare(`INSERT INTO models (id, provider, name, active, position, external_id, first_seen_at, catalogue_metadata, filter_reason)
       SELECT json_extract(j.value, '$.uuid'),
-      ?1, json_extract(j.value, '$.name'), 1, CAST(j.key AS INTEGER), json_extract(j.value, '$.id')
+       ?1, json_extract(j.value, '$.name'), json_extract(j.value, '$.active'), CAST(j.key AS INTEGER), json_extract(j.value, '$.id'), json_extract(j.value, '$.firstSeenAt'), json_extract(j.value, '$.metadata'), CASE WHEN json_extract(j.value, '$.active') = 0 THEN json_extract(j.value, '$.metadata.reasons') ELSE NULL END
       FROM json_each(?2) j WHERE true
-      ON CONFLICT(provider, external_id) DO UPDATE SET name = excluded.name, active = 1, position = excluded.position`)
+       ON CONFLICT(provider, external_id) DO UPDATE SET name = excluded.name, active = excluded.active, position = excluded.position, catalogue_metadata = excluded.catalogue_metadata, filter_reason = excluded.filter_reason`)
       .bind(provider, encoded),
     db
       .prepare(
-        `UPDATE models SET active = 0 WHERE provider = ? AND (external_id IS NULL OR external_id NOT IN (SELECT json_extract(value, '$.id') FROM json_each(?)))`,
+        `UPDATE models SET active = 0, filter_reason = '["absent-from-api"]' WHERE provider = ? AND (external_id IS NULL OR external_id NOT IN (SELECT json_extract(value, '$.id') FROM json_each(?)))`,
       )
       .bind(provider, encoded),
     db
@@ -87,7 +110,7 @@ async function applyCatalogue(
       .prepare(
         "UPDATE catalogue_sync SET succeeded_at = unixepoch('subsec') * 1000, model_count = ?, status = 'Synced', lease = '', lease_until = 0 WHERE provider = ? AND lease = ?",
       )
-      .bind(models.length, provider, lease),
+      .bind(ordered.filter((model) => !model.metadata?.reasons.length).length, provider, lease),
     db.prepare("DELETE FROM catalogue_sync_guard"),
   ]);
 }
@@ -118,9 +141,11 @@ async function syncProvider(
     if (!key) {
       throw new Error("API key not configured");
     }
-    const models = await listServiceModels(adapter, key, request);
+    const models = await listServiceModels(adapter, key, request, true);
     // oxlint-disable-next-line eslint/no-use-before-define -- The optional documentation step is isolated from catalogue failure handling.
     await enrichCatalogue(bindings.DB, entry, lease, models, request);
+    // oxlint-disable-next-line eslint/no-use-before-define -- Evidence resolution precedes the fenced replacement.
+    await catalogueEvidence(bindings.DB, entry, models);
     await applyCatalogue(bindings.DB, provider.id, lease, models);
   } catch (error) {
     const known =
@@ -135,6 +160,70 @@ async function syncProvider(
     )
       .bind(status, provider.id, lease)
       .run();
+  }
+}
+
+async function openaiEvidence(db: D1Database, provider: string, models: ExternalModel[]) {
+  const rows = await db
+    .prepare(`SELECT external_id, source_url,
+    EXISTS (SELECT 1 FROM json_each(metadata_json, '$.outputModalities') WHERE value = 'text') AS text_output,
+    COALESCE(json_extract(metadata_json, '$.endpoints."v1/chat/completions"'), 0) OR COALESCE(json_extract(metadata_json, '$.endpoints."v1/responses"'), 0) AS chat
+    FROM model_metadata WHERE provider = ? AND status = 'ok' AND metadata_json IS NOT NULL`)
+    .bind(provider)
+    .all<{ external_id: string; source_url: string; text_output: number; chat: number }>();
+  const documents = new Map(rows.results.map((row) => [row.external_id, row]));
+  for (const model of models) {
+    const document = documents.get(model.id);
+    if (document) {
+      model.metadata ??= { evidence: {}, reasons: [] };
+      model.metadata.evidence["openaiDocument"] = document.source_url;
+      if (document.text_output === 0) {
+        model.metadata.reasons.push("no-text-output");
+      }
+      if (document.chat === 0) {
+        model.metadata.reasons.push("no-chat-or-responses");
+      }
+    }
+  }
+}
+
+async function catalogueEvidence(
+  db: D1Database,
+  entry: RegisteredProvider,
+  models: ExternalModel[],
+) {
+  if (entry.adapter?.secret === "OPENAI_API_KEY") {
+    await openaiEvidence(db, entry.provider.id, models);
+    return;
+  }
+  // oxlint-disable-next-line eslint/no-use-before-define -- Alias policy consumes normalised evidence only.
+  catalogueAliases(entry, models);
+}
+
+function catalogueAliases(entry: RegisteredProvider, models: ExternalModel[]) {
+  const listed = new Map(models.map((model) => [model.id, model]));
+  if (entry.adapter?.secret === "MISTRAL_API_KEY") {
+    for (const model of models) {
+      const canonical = model.metadata?.canonicalId;
+      if (canonical && canonical !== model.id && listed.has(canonical)) {
+        model.metadata?.reasons.push("alias-of-listed-canonical");
+      }
+    }
+  } else {
+    for (const model of models) {
+      for (const alias of model.metadata?.aliases ?? []) {
+        const candidate = listed.get(alias);
+        if (
+          candidate &&
+          candidate.id !== model.id &&
+          !candidate.metadata?.aliases?.includes(model.id)
+        ) {
+          candidate.metadata ??= { evidence: {}, reasons: [] };
+          candidate.metadata.canonicalId = model.id;
+          candidate.metadata.reasons.push("alias-of-listed-canonical");
+        }
+      }
+    }
   }
 }
 

@@ -1,8 +1,11 @@
+import { apiMetadata } from "./model-eligibility";
+import type { CatalogueMetadata } from "./model-eligibility";
 import type { ModelAdapter } from "./provider-registry";
 
 interface ExternalModel {
   id: string;
   name: string;
+  metadata?: CatalogueMetadata;
 }
 type CatalogueFetch = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -32,7 +35,7 @@ function parseModel(
 ): { model: ExternalModel; selectable: boolean } {
   const row = record(value);
   const id = text(adapter.protocol === "gemini" ? row["name"] : row["id"]);
-  if (adapter.protocol === "list" && row["object"] !== "model") {
+  if ((adapter.protocol === "list" || adapter.protocol === "xai") && row["object"] !== "model") {
     throw new Error("Invalid model response");
   }
   if (adapter.protocol === "anthropic") {
@@ -42,6 +45,7 @@ function parseModel(
     throw new Error("Invalid model response");
   }
   let selectable = true;
+  const metadata = apiMetadata(row, adapter);
   if (adapter.protocol === "gemini") {
     const methods = row["supportedGenerationMethods"];
     if (
@@ -54,7 +58,7 @@ function parseModel(
     selectable = methods.includes("generateContent");
   }
   const label = adapter.protocol === "cursor" ? `${text(row["displayName"], 128)} (${id})` : id;
-  return { model: { id, name: text(label, 700) }, selectable };
+  return { model: { id, name: text(label, 700), ...(metadata ? { metadata } : {}) }, selectable };
 }
 
 function nextPage(body: Record<string, unknown>, adapter: ModelAdapter): string {
@@ -139,13 +143,30 @@ function parsePage(
   body: Record<string, unknown>,
   adapter: ModelAdapter,
 ): { models: ExternalModel[]; cursor: string; ids: string[] } {
-  const fields = { anthropic: "data", cursor: "items", gemini: "models", list: "data" };
+  const fields = {
+    anthropic: "data",
+    cursor: "items",
+    gemini: "models",
+    list: "data",
+    xai: "models",
+  };
   const values = body[fields[adapter.protocol]];
   if (!Array.isArray(values)) {
     throw new TypeError("Invalid model response");
   }
   const parsed = values.map((value: unknown) => parseModel(value, adapter));
-  const models = parsed.filter((value) => value.selectable).map((value) => value.model);
+  const models = parsed.map((value) =>
+    value.selectable
+      ? value.model
+      : {
+          ...value.model,
+          metadata: {
+            ...value.model.metadata,
+            evidence: value.model.metadata?.evidence ?? {},
+            reasons: [...(value.model.metadata?.reasons ?? []), "no-generate-content"],
+          },
+        },
+  );
   const ids = parsed.map((value) => value.model.id);
   const cursor = nextPage(body, adapter);
   if (cursor && values.length === 0) {
@@ -180,6 +201,7 @@ async function listServiceModels(
   adapter: ModelAdapter,
   key: string,
   request: CatalogueFetch = fetch,
+  includeExcluded = false,
 ): Promise<ExternalModel[]> {
   const headers = new Headers({ Accept: "application/json" });
   if (adapter.protocol === "anthropic") {
@@ -211,10 +233,14 @@ async function listServiceModels(
     models.push(...result.models);
     ({ cursor } = result);
     if (!cursor) {
-      if (models.length === 0) {
+      if (ids.size === 0) {
         throw new Error("Empty model catalogue");
       }
-      return models;
+      return includeExcluded
+        ? models
+        : models
+            .filter((model) => !model.metadata?.reasons.length)
+            .map(({ id, name }) => ({ id, name }));
     }
     if (pages.has(cursor)) {
       throw new Error("Invalid pagination");

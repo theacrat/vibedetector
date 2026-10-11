@@ -2,7 +2,7 @@ import { catalogueScope } from "@/catalogue-scope";
 import type { Provider } from "@/domain";
 import { initialProviders } from "@/server/registered-providers";
 
-type ModelProtocol = "list" | "anthropic" | "gemini" | "cursor";
+type ModelProtocol = "list" | "anthropic" | "gemini" | "cursor" | "xai";
 type ModelSecret =
   | "OPENAI_API_KEY"
   | "ANTHROPIC_API_KEY"
@@ -50,7 +50,7 @@ const adapters: Record<string, ModelAdapter> = {
     protocol: "gemini",
     secret: "GEMINI_API_KEY",
   },
-  grok: { endpoint: "https://api.x.ai/v1/models", protocol: "list", secret: "XAI_API_KEY" },
+  grok: { endpoint: "https://api.x.ai/v1/language-models", protocol: "xai", secret: "XAI_API_KEY" },
   kimi: {
     endpoint: "https://api.moonshot.ai/v1/models",
     protocol: "list",

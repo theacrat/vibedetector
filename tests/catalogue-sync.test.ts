@@ -8,6 +8,8 @@ import { saveReport, sessionReport } from "@/server/storage";
 
 const CLAUDE = "10000000-0000-4000-8000-000000000001";
 const CHATGPT = "10000000-0000-4000-8000-000000000002";
+const MISTRAL = "10000000-0000-4000-8000-000000000006";
+const GROK = "10000000-0000-4000-8000-000000000005";
 const runtimes: Miniflare[] = [];
 
 afterAll(async () => {
@@ -22,6 +24,10 @@ async function migrate(db: D1Database, filename: string) {
       .filter((statement) => statement.trim())
       .map((statement) => db.prepare(statement)),
   );
+  if (filename === "0005_catalogue_sync.sql") {
+    await migrate(db, "0006_model_metadata.sql");
+    await migrate(db, "0007_catalogue_eligibility.sql");
+  }
 }
 
 async function database() {
@@ -59,6 +65,247 @@ async function lease(db: D1Database, token: string) {
     .bind(token, CLAUDE)
     .run();
 }
+
+test.each(["", "not-a-date", "2026-02-30T00:00:00Z", { date: 42 }])(
+  "malformed Mistral deprecation preserves membership, UUIDs and last success",
+  async (deprecation) => {
+    const db = await database();
+    await migrate(db, "0005_catalogue_sync.sql");
+    const bindings = { DB: db, MISTRAL_API_KEY: "test" };
+    await syncCatalogue(bindings, MISTRAL, async () => {
+      await Promise.resolve();
+      return Response.json({
+        data: [
+          {
+            capabilities: { completion_chat: true },
+            // oxlint-disable-next-line unicorn/no-null -- The provider schema uses null for no deprecation.
+            deprecation: null,
+            id: "chat",
+            object: "model",
+          },
+        ],
+      });
+    });
+    const before = await loadModels(db, MISTRAL);
+    const success = await db
+      .prepare("SELECT succeeded_at FROM catalogue_sync WHERE provider = ?")
+      .bind(MISTRAL)
+      .first<{ succeeded_at: number }>();
+    await db
+      .prepare("UPDATE catalogue_sync SET attempted_at = 0 WHERE provider = ?")
+      .bind(MISTRAL)
+      .run();
+    const statuses = await syncCatalogue(bindings, MISTRAL, async () => {
+      await Promise.resolve();
+      return Response.json({
+        data: [
+          { capabilities: { completion_chat: true }, deprecation, id: "chat", object: "model" },
+        ],
+      });
+    });
+    expect(await loadModels(db, MISTRAL)).toEqual(before);
+    expect(
+      await db
+        .prepare("SELECT succeeded_at FROM catalogue_sync WHERE provider = ?")
+        .bind(MISTRAL)
+        .first<{ succeeded_at: number }>(),
+    ).toEqual(success);
+    expect(statuses.find((status) => status.provider === MISTRAL)?.status).toBe(
+      "Invalid model response",
+    );
+  },
+);
+
+test.each(["mistral", "grok"])(
+  "complete %s sync archives explicit aliases without losing report identity",
+  async (slug) => {
+    const db = await database();
+    await migrate(db, "0005_catalogue_sync.sql");
+    const provider = slug === "mistral" ? MISTRAL : GROK;
+    const bindings = { DB: db, MISTRAL_API_KEY: "test", XAI_API_KEY: "test" };
+    const rows: {
+      aliases: string[];
+      capabilities: { completion_chat: boolean };
+      id: string;
+      name: string;
+      object: string;
+      output_modalities: string[];
+    }[] = [
+      {
+        aliases: [],
+        capabilities: { completion_chat: true },
+        id: "canonical",
+        name: "canonical",
+        object: "model",
+        output_modalities: ["text"],
+      },
+      {
+        aliases: [],
+        capabilities: { completion_chat: true },
+        id: "alias",
+        name: "alias",
+        object: "model",
+        output_modalities: ["text"],
+      },
+    ];
+    const request = async () => {
+      await Promise.resolve();
+      return Response.json({ [slug === "mistral" ? "data" : "models"]: rows });
+    };
+    await syncCatalogue(bindings, provider, request);
+    const before = await loadModels(db, provider);
+    const alias = before.find((model) => model.name === "alias");
+    if (!alias) {
+      throw new Error("Missing alias");
+    }
+    const now = Date.now();
+    await saveReport(db, provider, "owner", "slow", now, alias.id);
+    rows[0]?.aliases.push("alias");
+    if (slug === "mistral" && rows[1]) {
+      rows[1].name = "canonical";
+      rows[1].aliases.push("canonical");
+    }
+    await db
+      .prepare("UPDATE catalogue_sync SET attempted_at = 0 WHERE provider = ?")
+      .bind(provider)
+      .run();
+    await syncCatalogue(bindings, provider, request);
+    const after = await loadModels(db, provider);
+    expect(after.filter((model) => model.active).map((model) => model.name)).toEqual(["canonical"]);
+    expect(after.find((model) => model.id === alias.id)?.active).toBe(false);
+    const saved = await sessionReport(db, provider, "owner", now);
+    expect(saved.model).toBe(alias.id);
+    const archived = await db
+      .prepare("SELECT filter_reason FROM models WHERE id = ?")
+      .bind(alias.id)
+      .first();
+    expect(archived).toEqual({ filter_reason: '["alias-of-listed-canonical"]' });
+    await saveReport(db, provider, "owner", "broken", now, alias.id);
+  },
+);
+
+test("release order, first-seen arrivals and archived reappearance preserve exact UUIDs", async () => {
+  const db = await database();
+  await migrate(db, "0005_catalogue_sync.sql");
+  await lease(db, "order-a");
+  await applyCatalogue(db, CLAUDE, "order-a", [
+    {
+      id: "old",
+      metadata: { evidence: {}, reasons: [], releasedAt: 1_700_000_000_000 },
+      name: "old",
+    },
+    {
+      id: "new",
+      metadata: { evidence: {}, reasons: [], releasedAt: 1_780_000_000_000 },
+      name: "new",
+    },
+  ]);
+  const beforeRows = await loadModels(db, CLAUDE);
+  const before = beforeRows.filter((model) => model.active);
+  expect(before.map((model) => model.name)).toEqual(["new", "old"]);
+  const old = before.find((model) => model.name === "old");
+  if (!old) {
+    throw new Error("Missing old model");
+  }
+  const now = Date.now();
+  await saveReport(db, CLAUDE, "owner", "slow", now, old.id);
+  await lease(db, "order-b");
+  await applyCatalogue(db, CLAUDE, "order-b", [
+    {
+      id: "old",
+      metadata: { evidence: {}, reasons: ["deprecated"], releasedAt: 1_700_000_000_000 },
+      name: "old",
+    },
+    {
+      id: "new",
+      metadata: { evidence: {}, reasons: [], releasedAt: 1_780_000_000_000 },
+      name: "new",
+    },
+    { id: "arrival", name: "arrival" },
+  ]);
+  const archived = await loadModels(db, CLAUDE);
+  expect(archived.filter((model) => model.active).map((model) => model.name)).toEqual([
+    "arrival",
+    "new",
+  ]);
+  expect(archived.find((model) => model.id === old.id)?.active).toBe(false);
+  await saveReport(db, CLAUDE, "owner", "broken", now, old.id);
+  const saved = await sessionReport(db, CLAUDE, "owner", now);
+  expect(saved.model).toBe(old.id);
+  expect(saveReport(db, CLAUDE, "other", "broken", now, old.id)).rejects.toThrow();
+  const timestamps = await db
+    .prepare(
+      "SELECT external_id, first_seen_at FROM models WHERE provider = ? AND external_id IS NOT NULL ORDER BY external_id",
+    )
+    .bind(CLAUDE)
+    .all();
+  await lease(db, "order-c");
+  await applyCatalogue(db, CLAUDE, "order-c", [
+    { id: "old", name: "old" },
+    { id: "arrival", name: "arrival" },
+    { id: "new", name: "new" },
+  ]);
+  const restored = await loadModels(db, CLAUDE);
+  expect(restored.find((model) => model.id === old.id)?.active).toBe(true);
+  const restoredTimes = await db
+    .prepare(
+      "SELECT external_id, first_seen_at FROM models WHERE provider = ? AND external_id IS NOT NULL ORDER BY external_id",
+    )
+    .bind(CLAUDE)
+    .all();
+  expect(restoredTimes.results).toEqual(timestamps.results);
+});
+
+test("validated all-filtered response archives all but upstream empty and invalid metadata preserve catalogue", async () => {
+  const db = await database();
+  await migrate(db, "0005_catalogue_sync.sql");
+  const env = { ANTHROPIC_API_KEY: "test", DB: db };
+  await syncCatalogue(env, CLAUDE, async () => {
+    await Promise.resolve();
+    return Response.json({
+      data: [{ display_name: "Active", id: "active", lifecycle: "active", type: "model" }],
+      has_more: false,
+    });
+  });
+  const initial = await loadModels(db, CLAUDE);
+  const active = initial.find((model) => model.active);
+  for (const data of [
+    [],
+    [{ display_name: "Invalid", id: "active", lifecycle: false, type: "model" }],
+  ]) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Each failed sync must preserve the previous catalogue.
+    await db
+      .prepare("UPDATE catalogue_sync SET attempted_at = 0 WHERE provider = ?")
+      .bind(CLAUDE)
+      .run();
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Sequential replacement attempts exercise cooldown reset.
+    await syncCatalogue(env, CLAUDE, async () => {
+      await Promise.resolve();
+      return Response.json({ data, has_more: false });
+    });
+    // oxlint-disable-next-line eslint/no-await-in-loop -- Inspect membership after each rejected response.
+    const preserved = await loadModels(db, CLAUDE);
+    expect(preserved.find((model) => model.active)).toEqual(active);
+  }
+  await db
+    .prepare("UPDATE catalogue_sync SET attempted_at = 0 WHERE provider = ?")
+    .bind(CLAUDE)
+    .run();
+  const status = await syncCatalogue(env, CLAUDE, async () => {
+    await Promise.resolve();
+    return Response.json({
+      data: [{ display_name: "Archived", id: "active", lifecycle: "retired", type: "model" }],
+      has_more: false,
+    });
+  });
+  const filtered = await loadModels(db, CLAUDE);
+  expect(filtered.filter((model) => model.active)).toEqual([]);
+  expect(status.find((entry) => entry.provider === CLAUDE)).toMatchObject({
+    modelCount: 0,
+    status: "Synced",
+  });
+  expect(filtered.find((model) => model.name === "active")?.id).toBe(active?.id);
+});
 
 test("populated sync migration preserves report fields, UUIDs and foreign keys", async () => {
   const db = await database();
@@ -157,6 +404,9 @@ test("one provider failure preserves its catalogue while another syncs and coold
   const bindings = { ANTHROPIC_API_KEY: "secret", DB: db, OPENAI_API_KEY: "secret" };
   await syncCatalogue(bindings, undefined, async (url) => {
     await Promise.resolve();
+    if (url.startsWith("https://developers.openai.com")) {
+      return new Response("Unavailable", { status: 503 });
+    }
     calls += 1;
     return url.includes("anthropic")
       ? new Response("secret", { status: 429 })
@@ -228,8 +478,11 @@ test("concurrent refresh and missing keys record one shared attempt", async () =
   const bindings = { DB: db, OPENAI_API_KEY: "secret" };
   await Promise.all(
     [1, 2, 3].map(async () =>
-      syncCatalogue(bindings, CHATGPT, async () => {
+      syncCatalogue(bindings, CHATGPT, async (url) => {
         await Promise.resolve();
+        if (url.startsWith("https://developers.openai.com")) {
+          return new Response("Unavailable", { status: 503 });
+        }
         calls += 1;
         return Response.json({ data: [{ id: "api", object: "model" }], object: "list" });
       }),
